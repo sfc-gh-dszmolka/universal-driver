@@ -1,7 +1,7 @@
+use handle_manager;
 use std::ops::Deref;
 use std::sync::{Arc, LockResult, Mutex, MutexGuard, RwLock};
 use tracing::{span, Level};
-use handle_manager;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Handle {
@@ -26,11 +26,10 @@ impl<T> HandleManager<T> {
         }
     }
 
-    pub fn add_handle(&self, obj: T) -> Handle{
+    pub fn add_handle(&self, obj: T) -> Handle {
         let span = span!(target: "handle_manager", Level::INFO, "HandleManager::add_handle");
         let _enter = span.enter();
         let mut handles = self.handles.write().unwrap();
-
 
         let size = handles.len();
         let handle = Handle {
@@ -64,11 +63,11 @@ impl<T> HandleManager<T> {
             Some(val) if magic == handle.magic => {
                 tracing::info!(target: "handle_manager", "Handle retrieved successfully");
                 Some(val.clone())
-            },
+            }
             Some(_) => {
                 tracing::error!("Handle magic mismatch, cannot get object");
                 None
-            },
+            }
             None => {
                 tracing::error!("Handle not found, cannot get object");
                 None
@@ -99,7 +98,7 @@ impl<T> HandleManager<T> {
             Some(_) => {
                 tracing::info!(target: "handle_manager", "Handle deleted successfully");
                 true
-            },
+            }
             None => {
                 tracing::error!("Handle not found, cannot delete handle");
                 false

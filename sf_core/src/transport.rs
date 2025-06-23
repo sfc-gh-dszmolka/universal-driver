@@ -1,12 +1,12 @@
+use c_api::CApiHandle;
 use std::io::{Read, Write};
 use std::ops::DerefMut;
 use std::rc::Rc;
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
 use thrift::protocol::{TCompactInputProtocol, TCompactOutputProtocol};
 use thrift::server::TProcessor;
-use tracing::{event, info, span, trace};
 use tracing::Level;
-use c_api::CApiHandle;
+use tracing::{event, info, span, trace};
 
 use handle_manager::{Handle, HandleManager};
 
@@ -64,13 +64,14 @@ impl ThriftTransport {
     }
 
     pub fn write(&mut self, buf: &[u8]) -> thrift::Result<usize> {
-        let span = span!(target: "thrift_transport", Level::INFO, "ThriftTransport::write", id=?self.id);
+        let span =
+            span!(target: "thrift_transport", Level::INFO, "ThriftTransport::write", id=?self.id);
         let _enter = span.enter();
         match self.input.write(buf) {
             Ok(len) => {
                 event!(target: "thrift_transport", Level::INFO, "Wrote {} bytes to transport", len);
                 Ok(len)
-            },
+            }
             Err(e) => {
                 event!(target: "thrift_transport", Level::ERROR, "Error writing to transport: {:?}", e);
                 Err(thrift::Error::from(e))
@@ -79,13 +80,14 @@ impl ThriftTransport {
     }
 
     pub fn read(&mut self, buf: &mut [u8]) -> thrift::Result<usize> {
-        let span = span!(target: "thrift_transport", Level::INFO, "ThriftTransport::read", id=?self.id);
+        let span =
+            span!(target: "thrift_transport", Level::INFO, "ThriftTransport::read", id=?self.id);
         let _enter = span.enter();
         match self.output.read(buf) {
             Ok(len) => {
                 event!(target: "thrift_transport", Level::INFO, "Read {} bytes from transport", len);
                 Ok(len)
-            },
+            }
             Err(e) => {
                 event!(target: "thrift_transport", Level::ERROR, "Error reading from transport: {:?}", e);
                 Err(thrift::Error::from(e))
@@ -93,7 +95,8 @@ impl ThriftTransport {
         }
     }
     pub fn flush(&mut self) -> thrift::Result<()> {
-        let span = span!(target: "thrift_transport", Level::INFO, "ThriftTransport::flush", id=?self.id);
+        let span =
+            span!(target: "thrift_transport", Level::INFO, "ThriftTransport::flush", id=?self.id);
         let _enter = span.enter();
         trace!(target: "thrift_transport", "Clearing output buffer");
         self.output.clear();
@@ -101,12 +104,11 @@ impl ThriftTransport {
         let mut input_protocol = TCompactInputProtocol::new(&mut self.input);
         let mut output_protocol = TCompactOutputProtocol::new(&mut self.output);
         info!(target: "thrift_transport", "Processing a call(input_length={:?})", input_bytes);
-        self.processor.process(&mut input_protocol, &mut output_protocol)?;
+        self.processor
+            .process(&mut input_protocol, &mut output_protocol)?;
         trace!(target: "thrift_transport", "Finished processing a call(output_length={:?})", self.output.bytes.len());
         trace!(target: "thrift_transport", "Clearing input buffer");
         self.input.clear();
         Ok(())
     }
-
 }
-

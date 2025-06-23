@@ -1,4 +1,4 @@
-// ODBC API implementation will go here. 
+// ODBC API implementation will go here.
 
 use odbc_sys as sql;
 use sf_core::{
@@ -265,4 +265,4 @@ pub unsafe extern "C" fn SQLRowCount(
     row_count_ptr: *mut sql::Len,
 ) -> sql::SqlReturn {
     sql::SqlReturn::ERROR
-} 
+}

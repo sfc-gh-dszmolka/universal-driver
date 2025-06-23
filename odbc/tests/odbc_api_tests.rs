@@ -66,4 +66,4 @@ fn test_connect_and_disconnect() {
 
     let ret = unsafe { SQLFreeHandle(sql::HandleType::Env, env_handle) };
     assert_eq!(ret, sql::SqlReturn::SUCCESS);
-} 
+}

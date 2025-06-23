@@ -12,10 +12,8 @@ pub fn new_database_driver_v1_client() -> Box<dyn TDatabaseDriverSyncClient + Se
     let output_handle_transport = handle_transport::HandleTransport::new(api_handle);
     let input_protocol = thrift::protocol::TCompactInputProtocol::new(input_handle_transport);
     let output_protocol = thrift::protocol::TCompactOutputProtocol::new(output_handle_transport);
-    Box::new(
-        DatabaseDriverSyncClient::new(
-            input_protocol,
-            output_protocol, 
-        )
-    )
+    Box::new(DatabaseDriverSyncClient::new(
+        input_protocol,
+        output_protocol,
+    ))
 }

@@ -13,7 +13,9 @@ pub struct Connection {
 
 impl Connection {
     pub fn new() -> Self {
-        Connection { settings: HashMap::new() }
+        Connection {
+            settings: HashMap::new(),
+        }
     }
 }
 
@@ -23,7 +25,9 @@ pub struct Database {
 
 impl Database {
     pub fn new() -> Self {
-        Database { settings: HashMap::new() }
+        Database {
+            settings: HashMap::new(),
+        }
     }
 }
 
@@ -33,6 +37,8 @@ pub struct Statement {
 
 impl Statement {
     pub fn new() -> Self {
-        Statement { settings: HashMap::new() }
+        Statement {
+            settings: HashMap::new(),
+        }
     }
 }

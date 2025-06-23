@@ -1,9 +1,8 @@
+use api_server::database_driver_v1::DatabaseDriverV1;
+use handle_manager::Handle;
 use std::sync::Mutex;
 use tracing::{instrument, trace};
-use handle_manager::Handle;
 use transport::{ThriftTransport, TRANSPORT_HANDLE_MANAGER};
-use api_server::database_driver_v1::DatabaseDriverV1;
-
 
 #[repr(C)]
 pub enum SfCoreApi {
@@ -52,28 +51,39 @@ pub extern "C" fn sf_core_api_destroy(api: CApiHandle) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn sf_core_api_write(api: CApiHandle, buf: *mut u8, len: usize) -> usize {
-    let tt_ptr = TRANSPORT_HANDLE_MANAGER.get_obj(api.to_handle())
+    let tt_ptr = TRANSPORT_HANDLE_MANAGER
+        .get_obj(api.to_handle())
         .expect("Thrift transport not found");
-    let mut tt = tt_ptr.lock().expect("Failed to lock Thrift transport mutex");
-    let size = tt.write(unsafe { std::slice::from_raw_parts(buf, len) })
+    let mut tt = tt_ptr
+        .lock()
+        .expect("Failed to lock Thrift transport mutex");
+    let size = tt
+        .write(unsafe { std::slice::from_raw_parts(buf, len) })
         .expect("Failed to write to Thrift transport");
     size
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn sf_core_api_read(api: CApiHandle, buf: *mut u8, len: usize) -> usize {
-    let tt_ptr = TRANSPORT_HANDLE_MANAGER.get_obj(api.to_handle())
+    let tt_ptr = TRANSPORT_HANDLE_MANAGER
+        .get_obj(api.to_handle())
         .expect("Thrift transport not found");
-    let mut tt = tt_ptr.lock().expect("Failed to lock Thrift transport mutex");
-    let size = tt.read(unsafe { std::slice::from_raw_parts_mut(buf, len) })
+    let mut tt = tt_ptr
+        .lock()
+        .expect("Failed to lock Thrift transport mutex");
+    let size = tt
+        .read(unsafe { std::slice::from_raw_parts_mut(buf, len) })
         .expect("Failed to read from Thrift transport");
     size
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn sf_core_api_flush(api: CApiHandle) {
-    let tt_ptr = TRANSPORT_HANDLE_MANAGER.get_obj(api.to_handle())
+    let tt_ptr = TRANSPORT_HANDLE_MANAGER
+        .get_obj(api.to_handle())
         .expect("Thrift transport not found");
-    let mut tt = tt_ptr.lock().expect("Failed to lock Thrift transport mutex");
+    let mut tt = tt_ptr
+        .lock()
+        .expect("Failed to lock Thrift transport mutex");
     tt.flush().expect("Failed to flush Thrift transport");
 }
