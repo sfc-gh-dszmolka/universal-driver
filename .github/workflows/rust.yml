@@ -13,11 +13,18 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     steps:
-      - name: Install ODBC development libraries
-        run: sudo apt-get update && sudo apt-get install -y unixodbc-dev
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unixodbc-dev thrift-compiler
 
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Verify generated thrift files are up-to-date
+        run: |
+          bash ./scripts/generate_thrift.sh
+          git diff --exit-code
 
       - name: Install rustfmt
         run: rustup component add rustfmt
