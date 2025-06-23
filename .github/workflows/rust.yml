@@ -35,7 +35,7 @@ jobs:
         run: cargo test --workspace
 
       - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin --version 0.28.1
+        run: cargo install cargo-tarpaulin --version 0.32.8
 
       - name: Run code coverage
         run: cargo tarpaulin --workspace --out Lcov --output-dir ./coverage/
