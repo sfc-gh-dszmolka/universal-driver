@@ -1,0 +1,9 @@
+[package]
+name = "sf_core"
+version = "0.1.0"
+
+[dependencies]
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+rand = "0.9.1"
+thrift = "0.17.0"
