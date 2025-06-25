@@ -230,9 +230,7 @@ impl DatabaseDriverV1 {
             server_url: {
                 if let Some(Setting::String(value)) = conn.settings.get("server_url") {
                     value.clone()
-                } else if let Some(Setting::String(account_name)) =
-                    conn.settings.get("account")
-                {
+                } else if let Some(Setting::String(account_name)) = conn.settings.get("account") {
                     let protocol = conn
                         .settings
                         .get_string("protocol")
@@ -328,7 +326,15 @@ impl DatabaseDriverV1 {
             .post(&login_url)
             .json(&login_request)
             .header("accept", "application/snowflake")
-            .header("User-Agent", format!("{}/{} ({}) CPython/3.11.6",client_info.application, client_info.version.clone(), client_info.os.clone()))
+            .header(
+                "User-Agent",
+                format!(
+                    "{}/{} ({}) CPython/3.11.6",
+                    client_info.application,
+                    client_info.version.clone(),
+                    client_info.os.clone()
+                ),
+            )
             .header("Authorization", "Snowflake Token=\"None\"");
         let request = request.build().unwrap();
         tracing::info!("Request url: {:?}", request.url());
