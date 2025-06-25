@@ -10,6 +10,25 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install llvm-cov
+        run: cargo +stable install cargo-llvm-cov
+
+      - name: Run coverage
+        run: cargo llvm-cov --workspace --all-targets --all-features --output-path ./coverage/lcov.info
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }} # Not required for public repos
+          files: ./coverage/lcov.info
+          fail_ci_if_error: false
+
   ci:
     runs-on: ubuntu-latest
     steps:
@@ -46,14 +65,3 @@ jobs:
 
       - name: Test
         run: cargo test --workspace
-
-      # Disable code coverage for now
-      # - name: Run code coverage
-      #   uses: ./.github/actions/rust-coverage
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }} # Not required for public repos
-          files: ./coverage/lcov.info
-          fail_ci_if_error: false
