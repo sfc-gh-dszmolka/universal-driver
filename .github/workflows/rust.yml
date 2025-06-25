@@ -36,6 +36,8 @@ jobs:
 
       - name: Decode secrets
         run: ./scripts/decode_secrets.sh
+        env:
+          PARAMETERS_SECRET: ${{ secrets.PARAMETERS_SECRET }}
 
       - name: Test
         run: cargo test --workspace
