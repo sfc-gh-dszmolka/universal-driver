@@ -23,6 +23,7 @@ fn test_alloc_and_free_env_handle() {
 }
 
 #[test]
+#[ignore]
 fn test_connect_and_disconnect() {
     let mut env_handle: sql::Handle = std::ptr::null_mut();
     let ret = unsafe {

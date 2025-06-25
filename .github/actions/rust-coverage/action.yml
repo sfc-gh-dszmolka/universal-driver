@@ -3,22 +3,3 @@ description: 'Runs various checks for the Rust code in the repository.'
 runs:
   using: 'docker'
   image: 'Dockerfile'
-
-  steps:
-    - name: Run CI checks
-      shell: bash
-      run: |
-        echo "Checking formatting"
-        cargo fmt -- --check
-
-        echo "Checking"
-        cargo check --workspace
-
-        echo "Building"
-        cargo build --workspace
-
-        echo "Testing"
-        cargo test --workspace
-
-        echo "Running code coverage"
-        cargo tarpaulin --workspace --out Lcov --output-dir ./coverage/ 

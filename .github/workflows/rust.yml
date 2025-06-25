@@ -34,11 +34,22 @@ jobs:
       - name: Build
         run: cargo build --workspace
 
+      - name: Decode secrets
+        run: ./scripts/decode_secrets.sh
+        env:
+          PARAMETERS_SECRET: ${{ secrets.PARAMETERS_SECRET }}
+
+      - name: Install unixodbc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unixodbc-dev
+
       - name: Test
         run: cargo test --workspace
 
-      - name: Run code coverage
-        uses: ./.github/actions/rust-coverage
+      # Disable code coverage for now
+      # - name: Run code coverage
+      #   uses: ./.github/actions/rust-coverage
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

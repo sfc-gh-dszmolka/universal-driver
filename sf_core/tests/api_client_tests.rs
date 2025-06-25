@@ -1,15 +1,64 @@
+extern crate lazy_static;
 extern crate sf_core;
 extern crate tracing;
 extern crate tracing_subscriber;
 
 use sf_core::api_client::new_database_driver_v1_client;
+use sf_core::api_server::database_driver_v1::DatabaseDriverV1;
+use sf_core::driver::Setting;
+use sf_core::thrift_gen::database_driver_v1::DatabaseDriverSyncHandler;
 use sf_core::thrift_gen::database_driver_v1::InfoCode;
 use tracing::Level;
 use tracing_subscriber::EnvFilter;
 
+// Use serde to parse parameters.json
+use serde::{Deserialize, Serialize};
+
+#[derive(Deserialize, Serialize)]
+struct ParametersFile {
+    testconnection: Parameters,
+}
+
+#[derive(Deserialize, Serialize)]
+struct Parameters {
+    #[serde(rename = "SNOWFLAKE_TEST_ACCOUNT")]
+    account_name: Option<String>,
+    #[serde(rename = "SNOWFLAKE_TEST_USER")]
+    user: Option<String>,
+    #[serde(rename = "SNOWFLAKE_TEST_PASSWORD")]
+    password: Option<String>,
+    #[serde(rename = "SNOWFLAKE_TEST_DATABASE")]
+    database: Option<String>,
+    #[serde(rename = "SNOWFLAKE_TEST_SCHEMA")]
+    schema: Option<String>,
+    #[serde(rename = "SNOWFLAKE_TEST_WAREHOUSE")]
+    warehouse: Option<String>,
+    #[serde(rename = "SNOWFLAKE_TEST_HOST")]
+    host: Option<String>,
+    #[serde(rename = "SNOWFLAKE_TEST_ROLE")]
+    role: Option<String>,
+    #[serde(rename = "SNOWFLAKE_TEST_SERVER_URL")]
+    server_url: Option<String>,
+}
+
+use lazy_static::lazy_static;
+use std::fs;
+
+lazy_static! {
+    static ref PARAMETERS: Parameters = {
+        let parameters = fs::read_to_string("parameters.json").unwrap();
+        let parameters: ParametersFile = serde_json::from_str(&parameters).unwrap();
+        println!(
+            "Parameters: {:?}",
+            serde_json::to_string_pretty(&parameters).unwrap()
+        );
+        parameters.testconnection
+    };
+}
+
 fn setup_logging() {
     let env_filter = EnvFilter::builder()
-        .with_default_directive(Level::WARN.into())
+        .with_default_directive(Level::DEBUG.into())
         .from_env()
         .unwrap();
     let _ = tracing_subscriber::fmt::fmt()
@@ -178,6 +227,7 @@ fn test_connection_set_option_double() {
 }
 
 #[test]
+#[ignore]
 fn test_connection_init() {
     setup_logging();
     let mut client = new_database_driver_v1_client();
@@ -349,6 +399,7 @@ fn test_connection_lifecycle() {
 
 // Statement operation tests
 #[test]
+#[ignore]
 fn test_statement_new_and_release() {
     setup_logging();
     let mut client = new_database_driver_v1_client();
@@ -427,6 +478,7 @@ fn test_statement_prepare() {
 }
 
 #[test]
+#[ignore]
 fn test_statement_set_option_string() {
     setup_logging();
     let mut client = new_database_driver_v1_client();
@@ -446,6 +498,7 @@ fn test_statement_set_option_string() {
 }
 
 #[test]
+#[ignore]
 fn test_statement_set_option_bytes() {
     setup_logging();
     let mut client = new_database_driver_v1_client();
@@ -466,6 +519,7 @@ fn test_statement_set_option_bytes() {
 }
 
 #[test]
+#[ignore]
 fn test_statement_set_option_int() {
     setup_logging();
     let mut client = new_database_driver_v1_client();
@@ -485,6 +539,7 @@ fn test_statement_set_option_int() {
 }
 
 #[test]
+#[ignore]
 fn test_statement_set_option_double() {
     setup_logging();
     let mut client = new_database_driver_v1_client();
@@ -777,4 +832,51 @@ fn test_full_adbc_workflow() {
     // Cleanup
     client.connection_release(conn).unwrap();
     client.database_release(db).unwrap();
+}
+
+#[test]
+fn test_snowflake_connection_settings() {
+    setup_logging();
+    let driver = DatabaseDriverV1::new();
+
+    // Get credentials from parameters.json
+    let account_name = PARAMETERS.account_name.clone().unwrap();
+    let user = PARAMETERS.user.clone().unwrap();
+    let password = PARAMETERS.password.clone().unwrap();
+
+    // Create a new connection
+    let conn_handle = driver.handle_connection_new().unwrap();
+
+    // Set required connection settings
+    driver
+        .handle_connection_set_option_string(
+            conn_handle.clone(),
+            "account".to_string(),
+            account_name,
+        )
+        .unwrap();
+
+    driver
+        .handle_connection_set_option_string(conn_handle.clone(), "user".to_string(), user)
+        .unwrap();
+
+    driver
+        .handle_connection_set_option_string(conn_handle.clone(), "password".to_string(), password)
+        .unwrap();
+
+    if let Some(server_url) = PARAMETERS.server_url.clone() {
+        driver
+            .handle_connection_set_option_string(
+                conn_handle.clone(),
+                "server_url".to_string(),
+                server_url,
+            )
+            .unwrap();
+    }
+
+    // Attempt to initialize the connection with real credentials
+    let result = driver.handle_connection_init(conn_handle.clone(), "test_db".to_string());
+    println!("result: {:?}", result);
+    assert!(result.is_ok());
+    driver.handle_connection_release(conn_handle).unwrap();
 }

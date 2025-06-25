@@ -1,8 +1,8 @@
-use api_server::database_driver_v1::DatabaseDriverV1;
-use handle_manager::Handle;
+use crate::api_server::database_driver_v1::DatabaseDriverV1;
+use crate::handle_manager::Handle;
+use crate::transport::{TRANSPORT_HANDLE_MANAGER, ThriftTransport};
 use std::sync::Mutex;
 use tracing::{instrument, trace};
-use transport::{ThriftTransport, TRANSPORT_HANDLE_MANAGER};
 
 #[repr(C)]
 pub enum SfCoreApi {
