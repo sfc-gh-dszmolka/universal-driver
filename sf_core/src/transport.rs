@@ -1,4 +1,4 @@
-use c_api::CApiHandle;
+use crate::c_api::CApiHandle;
 use std::io::{Read, Write};
 use std::ops::DerefMut;
 use std::rc::Rc;
@@ -8,7 +8,7 @@ use thrift::server::TProcessor;
 use tracing::Level;
 use tracing::{event, info, span, trace};
 
-use handle_manager::{Handle, HandleManager};
+use crate::handle_manager::{Handle, HandleManager};
 
 pub static TRANSPORT_HANDLE_MANAGER: HandleManager<Mutex<ThriftTransport>> = HandleManager::new();
 

@@ -1,5 +1,5 @@
 use crate::c_api::SfCoreApi;
-use thrift_gen::database_driver_v1::{DatabaseDriverSyncClient, TDatabaseDriverSyncClient};
+use crate::thrift_gen::database_driver_v1::{DatabaseDriverSyncClient, TDatabaseDriverSyncClient};
 
 mod handle_transport;
 
