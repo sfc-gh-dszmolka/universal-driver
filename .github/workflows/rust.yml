@@ -47,8 +47,9 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
-      - name: Run code coverage
-        uses: ./.github/actions/rust-coverage
+      # Disable code coverage for now
+      # - name: Run code coverage
+      #   uses: ./.github/actions/rust-coverage
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
