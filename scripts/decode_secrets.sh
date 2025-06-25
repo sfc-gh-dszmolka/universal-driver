@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Read param password from 1password if not set
+# Read param secret from 1password if not set
 if [ -z "${PARAMETERS_SECRET}" ]; then
     echo "PARAMETERS_SECRET not set, reading from 1password"
     PARAMETERS_SECRET=$(op read "op://Eng - Snow Drivers Warsaw/PARAMETERS_SECRET/password")
