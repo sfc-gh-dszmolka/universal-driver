@@ -6,6 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install system dependencies for Rust and building the cargo-tarpaulin
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
+    unixodbc-dev \
     build-essential \
     pkg-config \
     curl \
