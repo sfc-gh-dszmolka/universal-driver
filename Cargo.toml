@@ -1,5 +1,6 @@
 # your_workspace/Cargo.toml
 [workspace]
+rust_version = "1.87.0"
 members = [
     "sf_core",
     "odbc",
