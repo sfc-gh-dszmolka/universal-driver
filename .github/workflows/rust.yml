@@ -39,30 +39,47 @@ jobs:
           files: ./lcov.info
           fail_ci_if_error: false
 
-  ci:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Install rustfmt
+        run: rustup component add rustfmt
+        
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Install clippy
+        run: rustup component add clippy
+        
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+  
+  thrift:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # - name: Generate thrift
-      #   uses: ./.github/actions/generate-thrift
+      - name: Generate thrift
+        uses: ./.github/actions/generate-thrift
 
-      # - name: Check thrift files are up-to-date
-      #   run: git diff --exit-code
-
-      - name: Install rustfmt
-        run: rustup component add rustfmt
-
-      - name: Check formatting
-        run: cargo fmt -- --check
-
-      - name: Install clippy
-        run: rustup component add clippy
-
-      - name: Run clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-
+      - name: Check thrift files are up-to-date
+        run: git diff --exit-code
+        
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Check
         run: cargo check --workspace
