@@ -272,12 +272,12 @@ impl DatabaseDriverV1 {
         // Extract required settings from connection - scope the lock to avoid holding across await
         let (login_parameters, client_info) = {
             let conn = conn_ptr.lock().unwrap();
-            
+
             // Extract required settings from connection
             tracing::debug!("Extracting connection settings");
             let login_parameters = self.get_login_parameters(&conn)?;
             let client_info = self.client_info(&conn)?;
-            
+
             (login_parameters, client_info)
         };
 
@@ -429,8 +429,6 @@ impl DatabaseDriverV1 {
             )))
         }
     }
-
-
 }
 
 impl DatabaseDriverSyncHandler for DatabaseDriverV1 {

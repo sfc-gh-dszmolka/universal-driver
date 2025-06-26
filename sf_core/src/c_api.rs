@@ -59,7 +59,7 @@ pub unsafe extern "C" fn sf_core_api_write(api: CApiHandle, buf: *mut u8, len: u
     let mut tt = tt_ptr
         .lock()
         .expect("Failed to lock Thrift transport mutex");
-    
+
     tt.write(unsafe { std::slice::from_raw_parts(buf, len) })
         .expect("Failed to write to Thrift transport")
 }
@@ -75,7 +75,7 @@ pub unsafe extern "C" fn sf_core_api_read(api: CApiHandle, buf: *mut u8, len: us
     let mut tt = tt_ptr
         .lock()
         .expect("Failed to lock Thrift transport mutex");
-    
+
     tt.read(unsafe { std::slice::from_raw_parts_mut(buf, len) })
         .expect("Failed to read from Thrift transport")
 }

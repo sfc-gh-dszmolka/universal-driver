@@ -123,7 +123,11 @@ fn test_database_set_option_double() {
 
     let db = client.database_new().unwrap();
     client
-        .database_set_option_double(db.clone(), "test_option".to_string(), std::f64::consts::PI.into())
+        .database_set_option_double(
+            db.clone(),
+            "test_option".to_string(),
+            std::f64::consts::PI.into(),
+        )
         .unwrap();
     client.database_release(db).unwrap();
 }

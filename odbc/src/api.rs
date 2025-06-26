@@ -19,8 +19,7 @@ struct Connection {
     conn_handle: Option<TConnectionHandle>,
 }
 
-struct Statement {
-}
+struct Statement {}
 
 lazy_static! {
     static ref ENV_HANDLE_MANAGER: HandleManager<Mutex<Environment>> = HandleManager::new();
