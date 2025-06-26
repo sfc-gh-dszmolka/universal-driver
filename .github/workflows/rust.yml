@@ -24,6 +24,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y unixodbc-dev
 
+      - name: Decode secrets
+        run: ./scripts/decode_secrets.sh
+        env:
+          PARAMETERS_SECRET: ${{ secrets.PARAMETERS_SECRET }}
+
       - name: Run coverage
         run: cargo llvm-cov --workspace --all-targets --all-features --output-path ./coverage/lcov.info
 
