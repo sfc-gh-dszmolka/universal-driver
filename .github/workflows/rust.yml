@@ -30,13 +30,13 @@ jobs:
           PARAMETERS_SECRET: ${{ secrets.PARAMETERS_SECRET }}
 
       - name: Run coverage
-        run: cargo llvm-cov --workspace --all-targets --all-features --output-path ./coverage/lcov.info
+        run: cargo llvm-cov --workspace --all-targets --all-features --output-path ./lcov.info
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }} # Not required for public repos
-          files: ./coverage/lcov.info
+          files: ./lcov.info
           fail_ci_if_error: false
 
   ci:
