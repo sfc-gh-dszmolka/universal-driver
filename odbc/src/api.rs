@@ -6,7 +6,7 @@ use sf_core::{
     handle_manager::{Handle, HandleManager},
     thrift_gen::database_driver_v1::{
         ConnectionHandle as TConnectionHandle, DatabaseHandle as TDatabaseHandle,
-        StatementHandle as TStatementHandle, TDatabaseDriverSyncClient,
+        TDatabaseDriverSyncClient,
     },
 };
 use std::{slice, str, sync::Mutex};
@@ -19,16 +19,15 @@ struct Connection {
     conn_handle: Option<TConnectionHandle>,
 }
 
-struct Statement {
-    stmt_handle: Option<TStatementHandle>,
-}
+struct Statement {}
 
 lazy_static! {
     static ref ENV_HANDLE_MANAGER: HandleManager<Mutex<Environment>> = HandleManager::new();
     static ref DBC_HANDLE_MANAGER: HandleManager<Mutex<Connection>> = HandleManager::new();
     static ref STMT_HANDLE_MANAGER: HandleManager<Mutex<Statement>> = HandleManager::new();
 }
-
+/// # Safety
+/// This function is called by the ODBC driver manager.
 #[no_mangle]
 pub unsafe extern "C" fn SQLAllocHandle(
     handle_type: sql::HandleType,
@@ -68,7 +67,7 @@ pub unsafe extern "C" fn SQLAllocHandle(
             }
             let dbc_handle = *(input_handle as *mut Handle);
             if DBC_HANDLE_MANAGER.get_obj(dbc_handle).is_some() {
-                let stmt = Mutex::new(Statement { stmt_handle: None });
+                let stmt = Mutex::new(Statement {});
                 let new_stmt_handle = STMT_HANDLE_MANAGER.add_handle(stmt);
                 let handle_ptr = Box::into_raw(Box::new(new_stmt_handle));
                 *output_handle = handle_ptr as sql::Handle;
@@ -85,6 +84,8 @@ pub unsafe extern "C" fn SQLAllocHandle(
     }
 }
 
+/// # Safety
+/// This function is called by the ODBC driver manager.
 #[no_mangle]
 pub unsafe extern "C" fn SQLFreeHandle(
     handle_type: sql::HandleType,
@@ -126,15 +127,17 @@ pub unsafe extern "C" fn SQLFreeHandle(
     }
 }
 
+/// # Safety
+/// This function is called by the ODBC driver manager.
 #[no_mangle]
 pub unsafe extern "C" fn SQLConnect(
     connection_handle: sql::Handle,
     server_name: *const sql::Char,
     name_length1: sql::SmallInt,
-    user_name: *const sql::Char,
-    name_length2: sql::SmallInt,
-    authentication: *const sql::Char,
-    name_length3: sql::SmallInt,
+    _user_name: *const sql::Char,
+    _name_length2: sql::SmallInt,
+    _authentication: *const sql::Char,
+    _name_length3: sql::SmallInt,
 ) -> sql::SqlReturn {
     let dbc_handle = *(connection_handle as *mut Handle);
 
@@ -198,6 +201,8 @@ pub unsafe extern "C" fn SQLConnect(
     sql::SqlReturn::SUCCESS
 }
 
+/// # Safety
+/// This function is called by the ODBC driver manager.
 #[no_mangle]
 pub unsafe extern "C" fn SQLDisconnect(connection_handle: sql::Handle) -> sql::SqlReturn {
     let dbc_handle = *(connection_handle as *mut Handle);
@@ -225,44 +230,54 @@ pub unsafe extern "C" fn SQLDisconnect(connection_handle: sql::Handle) -> sql::S
     sql::SqlReturn::SUCCESS
 }
 
+/// # Safety
+/// This function is called by the ODBC driver manager.
 #[no_mangle]
 pub unsafe extern "C" fn SQLExecDirect(
-    statement_handle: sql::Handle,
-    statement_text: *const sql::Char,
-    text_length: sql::Integer,
+    _statement_handle: sql::Handle,
+    _statement_text: *const sql::Char,
+    _text_length: sql::Integer,
 ) -> sql::SqlReturn {
     sql::SqlReturn::ERROR
 }
 
+/// # Safety
+/// This function is called by the ODBC driver manager.
 #[no_mangle]
-pub unsafe extern "C" fn SQLFetch(statement_handle: sql::Handle) -> sql::SqlReturn {
+pub unsafe extern "C" fn SQLFetch(_statement_handle: sql::Handle) -> sql::SqlReturn {
     sql::SqlReturn::NO_DATA
 }
 
+/// # Safety
+/// This function is called by the ODBC driver manager.
 #[no_mangle]
 pub unsafe extern "C" fn SQLGetData(
-    statement_handle: sql::Handle,
-    col_or_param_num: sql::USmallInt,
-    target_type: sql::SqlDataType,
-    target_value_ptr: sql::Pointer,
-    buffer_length: sql::Len,
-    str_len_or_ind_ptr: *mut sql::Len,
+    _statement_handle: sql::Handle,
+    _col_or_param_num: sql::USmallInt,
+    _target_type: sql::SqlDataType,
+    _target_value_ptr: sql::Pointer,
+    _buffer_length: sql::Len,
+    _str_len_or_ind_ptr: *mut sql::Len,
 ) -> sql::SqlReturn {
     sql::SqlReturn::ERROR
 }
 
+/// # Safety
+/// This function is called by the ODBC driver manager.
 #[no_mangle]
 pub unsafe extern "C" fn SQLNumResultCols(
-    statement_handle: sql::Handle,
-    column_count_ptr: *mut sql::SmallInt,
+    _statement_handle: sql::Handle,
+    _column_count_ptr: *mut sql::SmallInt,
 ) -> sql::SqlReturn {
     sql::SqlReturn::ERROR
 }
 
+/// # Safety
+/// This function is called by the ODBC driver manager.
 #[no_mangle]
 pub unsafe extern "C" fn SQLRowCount(
-    statement_handle: sql::Handle,
-    row_count_ptr: *mut sql::Len,
+    _statement_handle: sql::Handle,
+    _row_count_ptr: *mut sql::Len,
 ) -> sql::SqlReturn {
     sql::SqlReturn::ERROR
 }

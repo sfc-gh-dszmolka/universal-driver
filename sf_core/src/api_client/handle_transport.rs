@@ -12,17 +12,15 @@ impl HandleTransport {
 
 impl std::io::Read for HandleTransport {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        Ok(crate::c_api::sf_core_api_read(
-            self.handle,
-            buf.as_mut_ptr(),
-            buf.len(),
-        ))
+        Ok(unsafe { crate::c_api::sf_core_api_read(self.handle, buf.as_mut_ptr(), buf.len()) })
     }
 }
 
 impl std::io::Write for HandleTransport {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let size = crate::c_api::sf_core_api_write(self.handle, buf.as_ptr() as *mut u8, buf.len());
+        let size = unsafe {
+            crate::c_api::sf_core_api_write(self.handle, buf.as_ptr() as *mut u8, buf.len())
+        };
         Ok(size)
     }
 

@@ -57,6 +57,13 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
+      - name: Install clippy
+        run: rustup component add clippy
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+
       - name: Check
         run: cargo check --workspace
 

@@ -1,5 +1,4 @@
-use std::ops::Deref;
-use std::sync::{Arc, LockResult, Mutex, MutexGuard, RwLock};
+use std::sync::{Arc, RwLock};
 use tracing::{Level, span};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,6 +15,12 @@ struct HandleValue<T> {
 pub struct HandleManager<T> {
     handles: RwLock<Vec<HandleValue<T>>>,
     // TODO Add id recycling (ids are never reused, so we can run out of ids)
+}
+
+impl<T> Default for HandleManager<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T> HandleManager<T> {
@@ -49,7 +54,7 @@ impl<T> HandleManager<T> {
         let _enter = span.enter();
 
         let index = handle.id as usize;
-        let mut handles = self.handles.read().unwrap();
+        let handles = self.handles.read().unwrap();
 
         if index >= handles.len() {
             tracing::error!("Handle index out of bounds, cannot get object");

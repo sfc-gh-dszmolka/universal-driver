@@ -5,7 +5,6 @@ extern crate tracing_subscriber;
 
 use sf_core::api_client::new_database_driver_v1_client;
 use sf_core::api_server::database_driver_v1::DatabaseDriverV1;
-use sf_core::driver::Setting;
 use sf_core::thrift_gen::database_driver_v1::DatabaseDriverSyncHandler;
 use sf_core::thrift_gen::database_driver_v1::InfoCode;
 use tracing::Level;
@@ -124,7 +123,11 @@ fn test_database_set_option_double() {
 
     let db = client.database_new().unwrap();
     client
-        .database_set_option_double(db.clone(), "test_option".to_string(), 3.14.into())
+        .database_set_option_double(
+            db.clone(),
+            "test_option".to_string(),
+            std::f64::consts::PI.into(),
+        )
         .unwrap();
     client.database_release(db).unwrap();
 }
