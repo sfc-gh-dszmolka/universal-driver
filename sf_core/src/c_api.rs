@@ -2,7 +2,6 @@ use crate::api_server::database_driver_v1::DatabaseDriverV1;
 use crate::handle_manager::Handle;
 use crate::transport::{TRANSPORT_HANDLE_MANAGER, ThriftTransport};
 use std::sync::Mutex;
-use tracing::{instrument, trace};
 
 #[repr(C)]
 pub enum SfCoreApi {
@@ -49,32 +48,36 @@ pub extern "C" fn sf_core_api_destroy(api: CApiHandle) {
     TRANSPORT_HANDLE_MANAGER.delete_handle(handle);
 }
 
+/// # Safety
+/// This function dereferences raw pointers `buf` and uses `len` to create a slice.
+/// The caller must ensure that `buf` is valid for reads of `len` bytes.
 #[unsafe(no_mangle)]
-pub extern "C" fn sf_core_api_write(api: CApiHandle, buf: *mut u8, len: usize) -> usize {
+pub unsafe extern "C" fn sf_core_api_write(api: CApiHandle, buf: *mut u8, len: usize) -> usize {
     let tt_ptr = TRANSPORT_HANDLE_MANAGER
         .get_obj(api.to_handle())
         .expect("Thrift transport not found");
     let mut tt = tt_ptr
         .lock()
         .expect("Failed to lock Thrift transport mutex");
-    let size = tt
-        .write(unsafe { std::slice::from_raw_parts(buf, len) })
-        .expect("Failed to write to Thrift transport");
-    size
+    
+    tt.write(unsafe { std::slice::from_raw_parts(buf, len) })
+        .expect("Failed to write to Thrift transport")
 }
 
+/// # Safety
+/// This function dereferences raw pointers `buf` and uses `len` to create a mutable slice.
+/// The caller must ensure that `buf` is valid for writes of `len` bytes.
 #[unsafe(no_mangle)]
-pub extern "C" fn sf_core_api_read(api: CApiHandle, buf: *mut u8, len: usize) -> usize {
+pub unsafe extern "C" fn sf_core_api_read(api: CApiHandle, buf: *mut u8, len: usize) -> usize {
     let tt_ptr = TRANSPORT_HANDLE_MANAGER
         .get_obj(api.to_handle())
         .expect("Thrift transport not found");
     let mut tt = tt_ptr
         .lock()
         .expect("Failed to lock Thrift transport mutex");
-    let size = tt
-        .read(unsafe { std::slice::from_raw_parts_mut(buf, len) })
-        .expect("Failed to read from Thrift transport");
-    size
+    
+    tt.read(unsafe { std::slice::from_raw_parts_mut(buf, len) })
+        .expect("Failed to read from Thrift transport")
 }
 
 #[unsafe(no_mangle)]

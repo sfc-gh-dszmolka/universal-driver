@@ -94,6 +94,12 @@ pub struct Connection {
     pub session_token: Option<String>,
 }
 
+impl Default for Connection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Connection {
     pub fn new() -> Self {
         Connection {
@@ -105,6 +111,12 @@ impl Connection {
 
 pub struct Database {
     pub settings: HashMap<String, Setting>,
+}
+
+impl Default for Database {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Database {

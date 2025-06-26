@@ -6,16 +6,16 @@ use crate::handle_manager::{Handle, HandleManager};
 use crate::thrift_gen::database_driver_v1::{
     ArrowSchemaPtr, ConnectionHandle, DatabaseDriverSyncHandler, DatabaseDriverSyncProcessor,
     DatabaseHandle, DriverException, ExecuteResult, InfoCode, PartitionedResult, StatementHandle,
-    StatusCode, TDatabaseDriverSyncClient,
+    StatusCode,
 };
 use std::collections::HashMap;
-use std::sync::{Mutex, RwLock};
+use std::sync::Mutex;
 use thrift::server::TProcessor;
 use thrift::{Error, OrderedFloat};
-use tracing_subscriber::fmt::format;
 
 use crate::driver::StatementState;
 use crate::thrift_gen::database_driver_v1::ArrowArrayStreamPtr;
+
 struct LoginParameters {
     account_name: String,
     login_name: String,
@@ -40,11 +40,11 @@ impl From<Handle> for DatabaseHandle {
     }
 }
 
-impl Into<Handle> for DatabaseHandle {
-    fn into(self) -> Handle {
+impl From<DatabaseHandle> for Handle {
+    fn from(val: DatabaseHandle) -> Self {
         Handle {
-            id: self.id as u64,
-            magic: self.magic as u64,
+            id: val.id as u64,
+            magic: val.magic as u64,
         }
     }
 }
@@ -58,11 +58,11 @@ impl From<Handle> for ConnectionHandle {
     }
 }
 
-impl Into<Handle> for ConnectionHandle {
-    fn into(self) -> Handle {
+impl From<ConnectionHandle> for Handle {
+    fn from(val: ConnectionHandle) -> Self {
         Handle {
-            id: self.id as u64,
-            magic: self.magic as u64,
+            id: val.id as u64,
+            magic: val.magic as u64,
         }
     }
 }
@@ -76,11 +76,11 @@ impl From<Handle> for StatementHandle {
     }
 }
 
-impl Into<Handle> for StatementHandle {
-    fn into(self) -> Handle {
+impl From<StatementHandle> for Handle {
+    fn from(val: StatementHandle) -> Self {
         Handle {
-            id: self.id as u64,
-            magic: self.magic as u64,
+            id: val.id as u64,
+            magic: val.magic as u64,
         }
     }
 }
@@ -89,6 +89,12 @@ pub struct DatabaseDriverV1 {
     db_handle_manager: HandleManager<Mutex<Database>>,
     conn_handle_manager: HandleManager<Mutex<Connection>>,
     stmt_handle_manager: HandleManager<Mutex<Statement>>,
+}
+
+impl Default for DatabaseDriverV1 {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DatabaseDriverV1 {
@@ -263,12 +269,17 @@ impl DatabaseDriverV1 {
     ) -> thrift::Result<()> {
         tracing::info!("Starting Snowflake login process");
 
-        let mut conn = conn_ptr.lock().unwrap();
-
-        // Extract required settings from connection
-        tracing::debug!("Extracting connection settings");
-        let login_parameters = self.get_login_parameters(&conn)?;
-        let client_info = self.client_info(&conn)?;
+        // Extract required settings from connection - scope the lock to avoid holding across await
+        let (login_parameters, client_info) = {
+            let conn = conn_ptr.lock().unwrap();
+            
+            // Extract required settings from connection
+            tracing::debug!("Extracting connection settings");
+            let login_parameters = self.get_login_parameters(&conn)?;
+            let client_info = self.client_info(&conn)?;
+            
+            (login_parameters, client_info)
+        };
 
         // Record key fields in the span
         tracing::Span::current().record("account_name", &login_parameters.account_name);
@@ -403,6 +414,7 @@ impl DatabaseDriverV1 {
         // Extract and store the session token
         tracing::debug!("Login successful, extracting session token");
         if let Some(data) = login_response.data {
+            let mut conn = conn_ptr.lock().unwrap();
             conn.session_token = data.token;
             tracing::info!("Snowflake login completed successfully");
             Ok(())
@@ -418,30 +430,9 @@ impl DatabaseDriverV1 {
         }
     }
 
-    fn get_setting_string(
-        &self,
-        settings: &HashMap<String, Setting>,
-        key: &str,
-    ) -> thrift::Result<String> {
-        match settings.get(key) {
-            Some(Setting::String(value)) => Ok(value.clone()),
-            Some(_) => Err(Error::from(DriverException::new(
-                format!("Setting '{}' is not a string", key),
-                StatusCode::INVALID_ARGUMENT,
-                None,
-                None,
-                None,
-            ))),
-            None => Err(Error::from(DriverException::new(
-                format!("Required setting '{}' not found", key),
-                StatusCode::INVALID_ARGUMENT,
-                None,
-                None,
-                None,
-            ))),
-        }
-    }
+
 }
+
 impl DatabaseDriverSyncHandler for DatabaseDriverV1 {
     fn handle_database_new(&self) -> thrift::Result<DatabaseHandle> {
         let handle = self
@@ -489,7 +480,7 @@ impl DatabaseDriverSyncHandler for DatabaseDriverV1 {
     fn handle_database_init(&self, db_handle: DatabaseHandle) -> thrift::Result<()> {
         let handle = db_handle.into();
         match self.db_handle_manager.get_obj(handle) {
-            Some(db_ptr) => Ok(()),
+            Some(_db_ptr) => Ok(()),
             None => Err(Error::from(DriverException::new(
                 String::from("Database handle not found"),
                 StatusCode::INVALID_ARGUMENT,
@@ -559,7 +550,7 @@ impl DatabaseDriverSyncHandler for DatabaseDriverV1 {
     fn handle_connection_init(
         &self,
         conn_handle: ConnectionHandle,
-        db_handle: String,
+        _db_handle: String,
     ) -> thrift::Result<()> {
         let handle = conn_handle.into();
         match self.conn_handle_manager.get_obj(handle) {
@@ -609,47 +600,47 @@ impl DatabaseDriverSyncHandler for DatabaseDriverV1 {
 
     fn handle_connection_get_info(
         &self,
-        conn_handle: ConnectionHandle,
-        info_codes: Vec<InfoCode>,
+        _conn_handle: ConnectionHandle,
+        _info_codes: Vec<InfoCode>,
     ) -> thrift::Result<Vec<u8>> {
         todo!()
     }
 
     fn handle_connection_get_objects(
         &self,
-        conn_handle: ConnectionHandle,
-        depth: i32,
-        catalog: String,
-        db_schema: String,
-        table_name: String,
-        table_type: Vec<String>,
-        column_name: String,
+        _conn_handle: ConnectionHandle,
+        _depth: i32,
+        _catalog: String,
+        _db_schema: String,
+        _table_name: String,
+        _table_type: Vec<String>,
+        _column_name: String,
     ) -> thrift::Result<Vec<u8>> {
         todo!()
     }
 
     fn handle_connection_get_table_schema(
         &self,
-        conn_handle: ConnectionHandle,
-        catalog: String,
-        db_schema: String,
-        table_name: String,
+        _conn_handle: ConnectionHandle,
+        _catalog: String,
+        _db_schema: String,
+        _table_name: String,
     ) -> thrift::Result<Vec<u8>> {
         todo!()
     }
 
     fn handle_connection_get_table_types(
         &self,
-        conn_handle: ConnectionHandle,
+        _conn_handle: ConnectionHandle,
     ) -> thrift::Result<Vec<u8>> {
         todo!()
     }
 
-    fn handle_connection_commit(&self, conn_handle: ConnectionHandle) -> thrift::Result<()> {
+    fn handle_connection_commit(&self, _conn_handle: ConnectionHandle) -> thrift::Result<()> {
         todo!()
     }
 
-    fn handle_connection_rollback(&self, conn_handle: ConnectionHandle) -> thrift::Result<()> {
+    fn handle_connection_rollback(&self, _conn_handle: ConnectionHandle) -> thrift::Result<()> {
         todo!()
     }
 
@@ -712,13 +703,13 @@ impl DatabaseDriverSyncHandler for DatabaseDriverV1 {
 
     fn handle_statement_set_substrait_plan(
         &self,
-        stmt_handle: StatementHandle,
-        plan: Vec<u8>,
+        _stmt_handle: StatementHandle,
+        _plan: Vec<u8>,
     ) -> thrift::Result<()> {
         todo!()
     }
 
-    fn handle_statement_prepare(&self, stmt_handle: StatementHandle) -> thrift::Result<()> {
+    fn handle_statement_prepare(&self, _stmt_handle: StatementHandle) -> thrift::Result<()> {
         todo!()
     }
 
@@ -760,23 +751,23 @@ impl DatabaseDriverSyncHandler for DatabaseDriverV1 {
 
     fn handle_statement_get_parameter_schema(
         &self,
-        stmt_handle: StatementHandle,
+        _stmt_handle: StatementHandle,
     ) -> thrift::Result<ArrowSchemaPtr> {
         todo!()
     }
 
     fn handle_statement_bind(
         &self,
-        stmt_handle: StatementHandle,
-        values: Vec<u8>,
+        _stmt_handle: StatementHandle,
+        _values: Vec<u8>,
     ) -> thrift::Result<()> {
         todo!()
     }
 
     fn handle_statement_bind_stream(
         &self,
-        stmt_handle: StatementHandle,
-        stream: Vec<u8>,
+        _stmt_handle: StatementHandle,
+        _stream: Vec<u8>,
     ) -> thrift::Result<()> {
         todo!()
     }
@@ -804,15 +795,15 @@ impl DatabaseDriverSyncHandler for DatabaseDriverV1 {
 
     fn handle_statement_execute_partitions(
         &self,
-        stmt_handle: StatementHandle,
+        _stmt_handle: StatementHandle,
     ) -> thrift::Result<PartitionedResult> {
         todo!()
     }
 
     fn handle_statement_read_partition(
         &self,
-        stmt_handle: StatementHandle,
-        partition_descriptor: Vec<u8>,
+        _stmt_handle: StatementHandle,
+        _partition_descriptor: Vec<u8>,
     ) -> thrift::Result<i64> {
         todo!()
     }
