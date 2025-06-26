@@ -4,3 +4,4 @@ members = [
     "sf_core",
     "odbc",
 ]
+resolver = "1"

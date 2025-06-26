@@ -883,3 +883,44 @@ fn test_snowflake_connection_settings() {
     assert!(result.is_ok());
     driver.handle_connection_release(conn_handle).unwrap();
 }
+
+#[test]
+fn test_snowflake_select_1() {
+    setup_logging();
+    let mut driver = new_database_driver_v1_client();
+
+    let conn_handle = driver.connection_new().unwrap();
+    driver
+        .connection_set_option_string(
+            conn_handle.clone(),
+            "account".to_string(),
+            PARAMETERS.account_name.clone().unwrap(),
+        )
+        .unwrap();
+    driver
+        .connection_set_option_string(
+            conn_handle.clone(),
+            "user".to_string(),
+            PARAMETERS.user.clone().unwrap(),
+        )
+        .unwrap();
+    driver
+        .connection_set_option_string(
+            conn_handle.clone(),
+            "password".to_string(),
+            PARAMETERS.password.clone().unwrap(),
+        )
+        .unwrap();
+    // driver.connection_set_option_string(conn_handle.clone(), "server_url".to_string(), PARAMETERS.server_url.clone().unwrap()).unwrap();
+    driver
+        .connection_init(conn_handle.clone(), "test_db".to_string())
+        .unwrap();
+    let stmt_handle = driver.statement_new(conn_handle.clone()).unwrap();
+    driver
+        .statement_set_sql_query(stmt_handle.clone(), "SELECT 1".to_string())
+        .unwrap();
+    let result = driver.statement_execute_query(stmt_handle.clone()).unwrap();
+    println!("result: {:?}", result);
+    driver.statement_release(stmt_handle).unwrap();
+    driver.connection_release(conn_handle).unwrap();
+}
