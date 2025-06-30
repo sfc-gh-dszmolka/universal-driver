@@ -1,4 +1,4 @@
-use arrow::{datatypes::ToByteSlice, ffi_stream::FFI_ArrowArrayStream};
+use arrow::ffi_stream::FFI_ArrowArrayStream;
 
 use crate::thrift_gen::database_driver_v1::ArrowArrayStreamPtr;
 

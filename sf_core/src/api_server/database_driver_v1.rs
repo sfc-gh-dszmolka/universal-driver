@@ -7,14 +7,11 @@ use crate::thrift_gen::database_driver_v1::{
     StatusCode,
 };
 use arrow::ffi_stream::FFI_ArrowArrayStream;
-use arrow_ipc::reader::{StreamDecoder, StreamReader};
+use arrow_ipc::reader::StreamReader;
 use base64::Engine;
-use std::io::Write;
-use std::ptr::write;
 use std::sync::Mutex;
 use thrift::server::TProcessor;
 use thrift::{Error, OrderedFloat};
-use tokio::fs::read;
 
 use crate::driver::StatementState;
 use crate::thrift_gen::database_driver_v1::ArrowArrayStreamPtr;
