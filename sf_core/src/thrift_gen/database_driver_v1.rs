@@ -752,11 +752,11 @@ impl TSerializable for StatementHandle {
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ArrowArrayStreamPtr {
-  pub value: i64,
+  pub value: Vec<u8>,
 }
 
 impl ArrowArrayStreamPtr {
-  pub fn new(value: i64) -> ArrowArrayStreamPtr {
+  pub fn new(value: Vec<u8>) -> ArrowArrayStreamPtr {
     ArrowArrayStreamPtr {
       value,
     }
@@ -766,7 +766,7 @@ impl ArrowArrayStreamPtr {
 impl TSerializable for ArrowArrayStreamPtr {
   fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<ArrowArrayStreamPtr> {
     i_prot.read_struct_begin()?;
-    let mut f_1: Option<i64> = None;
+    let mut f_1: Option<Vec<u8>> = None;
     loop {
       let field_ident = i_prot.read_field_begin()?;
       if field_ident.field_type == TType::Stop {
@@ -775,7 +775,7 @@ impl TSerializable for ArrowArrayStreamPtr {
       let field_id = field_id(&field_ident)?;
       match field_id {
         1 => {
-          let val = i_prot.read_i64()?;
+          let val = i_prot.read_bytes()?;
           f_1 = Some(val);
         },
         _ => {
@@ -794,8 +794,8 @@ impl TSerializable for ArrowArrayStreamPtr {
   fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
     let struct_ident = TStructIdentifier::new("ArrowArrayStreamPtr");
     o_prot.write_struct_begin(&struct_ident)?;
-    o_prot.write_field_begin(&TFieldIdentifier::new("value", TType::I64, 1))?;
-    o_prot.write_i64(self.value)?;
+    o_prot.write_field_begin(&TFieldIdentifier::new("value", TType::String, 1))?;
+    o_prot.write_bytes(&self.value)?;
     o_prot.write_field_end()?;
     o_prot.write_field_stop()?;
     o_prot.write_struct_end()
@@ -808,11 +808,11 @@ impl TSerializable for ArrowArrayStreamPtr {
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ArrowSchemaPtr {
-  pub value: i64,
+  pub value: Vec<u8>,
 }
 
 impl ArrowSchemaPtr {
-  pub fn new(value: i64) -> ArrowSchemaPtr {
+  pub fn new(value: Vec<u8>) -> ArrowSchemaPtr {
     ArrowSchemaPtr {
       value,
     }
@@ -822,7 +822,7 @@ impl ArrowSchemaPtr {
 impl TSerializable for ArrowSchemaPtr {
   fn read_from_in_protocol(i_prot: &mut dyn TInputProtocol) -> thrift::Result<ArrowSchemaPtr> {
     i_prot.read_struct_begin()?;
-    let mut f_1: Option<i64> = None;
+    let mut f_1: Option<Vec<u8>> = None;
     loop {
       let field_ident = i_prot.read_field_begin()?;
       if field_ident.field_type == TType::Stop {
@@ -831,7 +831,7 @@ impl TSerializable for ArrowSchemaPtr {
       let field_id = field_id(&field_ident)?;
       match field_id {
         1 => {
-          let val = i_prot.read_i64()?;
+          let val = i_prot.read_bytes()?;
           f_1 = Some(val);
         },
         _ => {
@@ -850,8 +850,8 @@ impl TSerializable for ArrowSchemaPtr {
   fn write_to_out_protocol(&self, o_prot: &mut dyn TOutputProtocol) -> thrift::Result<()> {
     let struct_ident = TStructIdentifier::new("ArrowSchemaPtr");
     o_prot.write_struct_begin(&struct_ident)?;
-    o_prot.write_field_begin(&TFieldIdentifier::new("value", TType::I64, 1))?;
-    o_prot.write_i64(self.value)?;
+    o_prot.write_field_begin(&TFieldIdentifier::new("value", TType::String, 1))?;
+    o_prot.write_bytes(&self.value)?;
     o_prot.write_field_end()?;
     o_prot.write_field_stop()?;
     o_prot.write_struct_end()

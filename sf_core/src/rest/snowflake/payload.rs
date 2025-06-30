@@ -72,3 +72,64 @@ pub struct SnowflakeLoginResponse {
 pub struct SnowflakeLoginResponseData {
     pub token: Option<String>,
 }
+
+#[derive(Serialize)]
+pub struct SnowflakeQueryRequest {
+    #[serde(rename = "sqlText")]
+    pub sql_text: String,
+    #[serde(rename = "asyncExec")]
+    pub async_exec: bool,
+    #[serde(rename = "sequenceId")]
+    pub sequence_id: i64,
+    #[serde(rename = "querySubmissionTime")]
+    pub query_submission_time: i64,
+    #[serde(rename = "parameters")]
+    pub parameters: HashMap<String, String>,
+    #[serde(rename = "queryContextDTO")]
+    pub query_context_dto: HashMap<String, String>,
+}
+
+#[derive(Deserialize)]
+#[allow(dead_code)]
+pub struct SnowflakeQueryResponse {
+    pub data: SnowflakeQueryResponseData,
+    pub code: Option<String>,
+    pub message: Option<String>,
+    pub success: bool,
+}
+
+#[derive(Deserialize)]
+#[allow(dead_code)]
+pub struct SnowflakeQueryResponseData {
+    pub parameters: Vec<HashMap<String, serde_json::Value>>,
+    pub rowtype: Vec<HashMap<String, serde_json::Value>>,
+    #[serde(rename = "rowsetBase64")]
+    pub rowset_base64: String,
+    pub total: i64,
+    pub returned: i64,
+    #[serde(rename = "queryId")]
+    pub query_id: String,
+    #[serde(rename = "databaseProvider")]
+    pub database_provider: Option<String>,
+    #[serde(rename = "finalDatabaseName")]
+    pub final_database_name: String,
+    #[serde(rename = "finalSchemaName")]
+    pub final_schema_name: String,
+    #[serde(rename = "finalWarehouseName")]
+    pub final_warehouse_name: String,
+    #[serde(rename = "finalRoleName")]
+    pub final_role_name: String,
+    #[serde(rename = "numberOfBinds")]
+    pub number_of_binds: i64,
+    #[serde(rename = "arrayBindSupported")]
+    pub array_bind_supported: bool,
+    #[serde(rename = "statementTypeId")]
+    pub statement_type_id: i64,
+    pub version: i64,
+    #[serde(rename = "sendResultTime")]
+    pub send_result_time: i64,
+    #[serde(rename = "queryResultFormat")]
+    pub query_result_format: String,
+    #[serde(rename = "queryContext")]
+    pub query_context: HashMap<String, serde_json::Value>,
+}

@@ -6,9 +6,15 @@ use crate::thrift_gen::database_driver_v1::{
     DatabaseHandle, DriverException, ExecuteResult, InfoCode, PartitionedResult, StatementHandle,
     StatusCode,
 };
+use arrow::ffi_stream::FFI_ArrowArrayStream;
+use arrow_ipc::reader::{StreamDecoder, StreamReader};
+use base64::Engine;
+use std::io::Write;
+use std::ptr::write;
 use std::sync::Mutex;
 use thrift::server::TProcessor;
 use thrift::{Error, OrderedFloat};
+use tokio::fs::read;
 
 use crate::driver::StatementState;
 use crate::thrift_gen::database_driver_v1::ArrowArrayStreamPtr;
@@ -18,6 +24,16 @@ impl From<Handle> for DatabaseHandle {
             id: handle.id as i64,
             magic: handle.magic as i64,
         }
+    }
+}
+
+impl From<*mut FFI_ArrowArrayStream> for ArrowArrayStreamPtr {
+    fn from(raw: *mut FFI_ArrowArrayStream) -> Self {
+        let len = size_of::<*mut FFI_ArrowArrayStream>();
+        let buf_ptr = std::ptr::addr_of!(raw) as *const u8;
+        let slice = unsafe { std::slice::from_raw_parts(buf_ptr, len) };
+        let vec = slice.to_vec();
+        ArrowArrayStreamPtr { value: vec }
     }
 }
 
@@ -518,9 +534,39 @@ impl DatabaseDriverSyncHandler for DatabaseDriverV1 {
         let handle = stmt_handle.into();
         match self.stmt_handle_manager.get_obj(handle) {
             Some(stmt_ptr) => {
+                use base64::engine::general_purpose;
                 let mut stmt = stmt_ptr.lock().unwrap();
+                let query = stmt
+                    .query
+                    .take()
+                    .ok_or(RestError::Internal("Query not found".to_string()))?;
+                // Run within the async runtime
+                let rt = tokio::runtime::Runtime::new().map_err(|e| {
+                    Error::from(DriverException::new(
+                        format!("Failed to create runtime: {}", e),
+                        StatusCode::UNKNOWN,
+                        None,
+                        None,
+                        None,
+                    ))
+                })?;
+
+                let response =
+                    rt.block_on(crate::rest::snowflake::snowflake_query(&stmt.conn, query))?;
+                let rowset_base64 = response.data.rowset_base64;
+                let rowset = general_purpose::STANDARD
+                    .decode(rowset_base64)
+                    .map_err(|e| RestError::Internal(format!("Failed to decode rowset: {}", e)))?;
+                let cursor = std::io::Cursor::new(rowset);
+                // Parse rowset from arrow ipc format
+                let reader = Box::new(StreamReader::try_new(cursor, None).map_err(|e| {
+                    RestError::Internal(format!("Failed to create stream reader: {}", e))
+                })?);
+                let stream = Box::new(arrow::ffi_stream::FFI_ArrowArrayStream::new(reader));
+                // Serialize pointer into integer
+                let stream_ptr = Box::into_raw(stream);
                 stmt.state = StatementState::Executed;
-                Ok(ExecuteResult::new(Box::new(ArrowArrayStreamPtr::new(0)), 0))
+                Ok(ExecuteResult::new(Box::new(stream_ptr.into()), 0))
             }
             None => Err(Error::from(DriverException::new(
                 String::from("Statement handle not found"),

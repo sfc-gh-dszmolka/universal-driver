@@ -6,11 +6,13 @@ use crate::rest::error::RestError;
 use crate::rest::snowflake::data::{ClientInfo, LoginParameters};
 use crate::rest::snowflake::payload::{
     ClientEnvironment, SnowflakeLoginData, SnowflakeLoginRequest, SnowflakeLoginResponse,
+    SnowflakeQueryResponse,
 };
 use reqwest;
 use serde_json;
 use std::collections::HashMap;
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tracing;
 
 fn client_info(_conn: &Connection) -> Result<ClientInfo, RestError> {
@@ -22,6 +24,33 @@ fn client_info(_conn: &Connection) -> Result<ClientInfo, RestError> {
         ocsp_mode: Some("FAIL_OPEN".to_string()),
     };
     Ok(client_info)
+}
+
+fn get_server_url(conn: &Connection) -> Result<String, RestError> {
+    if let Some(Setting::String(value)) = conn.settings.get("server_url") {
+        return Ok(value.clone());
+    }
+
+    if let Some(Setting::String(account_name)) = conn.settings.get("account") {
+        let protocol = conn
+            .settings
+            .get_string("protocol")
+            .unwrap_or("https".to_string());
+        if protocol != "https" && protocol != "http" {
+            tracing::warn!(
+                "Unexpected protocol specified during server url construction: {}",
+                protocol
+            );
+        }
+        return Ok(format!(
+            "{}://{}.snowflakecomputing.com",
+            protocol, account_name
+        ));
+    }
+
+    Err(RestError::MissingParameter(
+        "server_url or account".to_string(),
+    ))
 }
 
 fn get_login_parameters(conn: &Connection) -> Result<LoginParameters, RestError> {
@@ -49,27 +78,7 @@ fn get_login_parameters(conn: &Connection) -> Result<LoginParameters, RestError>
                 return Err(RestError::MissingParameter("password".to_string()));
             }
         },
-        server_url: {
-            if let Some(Setting::String(value)) = conn.settings.get("server_url") {
-                value.clone()
-            } else if let Some(Setting::String(account_name)) = conn.settings.get("account") {
-                let protocol = conn
-                    .settings
-                    .get_string("protocol")
-                    .unwrap_or("https".to_string());
-                if protocol != "https" && protocol != "http" {
-                    tracing::warn!(
-                        "Unexpected protocol specified during server url construction: {}",
-                        protocol
-                    );
-                }
-                format!("{}://{}.snowflakecomputing.com", protocol, account_name)
-            } else {
-                return Err(RestError::MissingParameter(
-                    "server_url or account".to_string(),
-                ));
-            }
-        },
+        server_url: get_server_url(conn)?,
     };
     Ok(params)
 }
@@ -201,4 +210,101 @@ pub async fn snowflake_login(
             "Login response missing token data".to_string(),
         ));
     }
+}
+
+pub async fn snowflake_query(
+    conn_ptr: &std::sync::Arc<Mutex<Connection>>,
+    sql: String,
+) -> Result<SnowflakeQueryResponse, RestError> {
+    use payload::{SnowflakeQueryRequest, SnowflakeQueryResponse};
+
+    let (session_token, server_url, client_info) = {
+        let conn = conn_ptr.lock().unwrap();
+        let session_token = conn
+            .session_token
+            .clone()
+            .ok_or(RestError::Internal("Session token not found".to_string()))?;
+        (session_token, get_server_url(&conn)?, client_info(&conn)?)
+    };
+
+    let client = reqwest::Client::new();
+    let query_url = format!("{}/queries/v1/query-request", server_url);
+
+    let query_request = SnowflakeQueryRequest {
+        sql_text: sql,
+        async_exec: false,
+        sequence_id: 1,
+        query_submission_time: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64,
+        parameters: HashMap::new(),
+        query_context_dto: HashMap::new(),
+    };
+
+    let request = client
+        .post(&query_url)
+        .header(
+            "Authorization",
+            &format!("Snowflake Token=\"{}\"", session_token),
+        )
+        .header("Accept", "application/snowflake")
+        .header(
+            "User-Agent",
+            format!(
+                "{}/{} ({}) CPython/3.11.6",
+                client_info.application,
+                client_info.version.clone(),
+                client_info.os_version.clone()
+            ),
+        )
+        .query(&[
+            ("requestId", uuid::Uuid::new_v4().to_string()),
+            ("request_guid", uuid::Uuid::new_v4().to_string()),
+        ])
+        .json(&query_request)
+        .build()
+        .map_err(|e| {
+            tracing::error!(error = %e, "Failed to build query request");
+            RestError::Internal(format!("Failed to build query request: {}", e))
+        })?;
+
+    tracing::debug!("Query request: {:?}", request);
+    tracing::debug!("Request headers: {:?}", request.headers());
+    tracing::debug!("Request body: {:?}", request.body().unwrap());
+    tracing::debug!("Request method: {:?}", request.method());
+    tracing::debug!("Request url: {:?}", request.url());
+    tracing::debug!("Request version: {:?}", request.version());
+    // tracing::debug!("Request content-length: {:?}", request.content_length());
+    // tracing::debug!("Request content-type: {:?}", request.content_type());
+    // tracing::debug!("Request accept: {:?}", request.accept());
+    // tracing::debug!("Request accept-encoding: {:?}", request.accept_encoding());
+
+    let response = client.execute(request).await.map_err(|e| {
+        tracing::error!(error = %e, "Failed to execute query request");
+        RestError::Internal(format!("Failed to execute query request: {}", e))
+    })?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        tracing::error!(status = %status, error_text = %error_text, "Query request failed");
+        return Err(RestError::Status(status));
+    }
+
+    let response_text = response
+        .text()
+        .await
+        .unwrap_or_else(|_| "Unknown error".to_string());
+    let response_data: SnowflakeQueryResponse =
+        serde_json::from_str(&response_text).map_err(|e| {
+            tracing::error!(error = %e, "Failed to parse query response");
+            tracing::trace!("Response text: {}", response_text);
+            RestError::Internal(format!("Failed to parse query response: {}", e))
+        })?;
+
+    Ok(response_data)
 }
