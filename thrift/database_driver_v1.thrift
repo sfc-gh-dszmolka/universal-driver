@@ -68,11 +68,11 @@ struct StatementHandle {
 }
 
 struct ArrowArrayStreamPtr {
-  1: required i64 value;
+  1: required binary value;
 }
 
 struct ArrowSchemaPtr {
-  1: required i64 value;
+  1: required binary value;
 }
 
 service DatabaseDriver {

@@ -2,8 +2,8 @@ use std::io::{Read, Write};
 use std::sync::Mutex;
 use thrift::protocol::{TCompactInputProtocol, TCompactOutputProtocol};
 use thrift::server::TProcessor;
-use tracing::Level;
-use tracing::{event, info, span, trace};
+use tracing::{Level, debug};
+use tracing::{event, span, trace};
 
 use crate::handle_manager::HandleManager;
 
@@ -62,11 +62,11 @@ impl ThriftTransport {
 
     pub fn write(&mut self, buf: &[u8]) -> thrift::Result<usize> {
         let span =
-            span!(target: "thrift_transport", Level::INFO, "ThriftTransport::write", id=?self.id);
+            span!(target: "thrift_transport", Level::TRACE, "ThriftTransport::write", id=?self.id);
         let _enter = span.enter();
         match self.input.write(buf) {
             Ok(len) => {
-                event!(target: "thrift_transport", Level::INFO, "Wrote {} bytes to transport", len);
+                event!(target: "thrift_transport", Level::TRACE, "Wrote {} bytes to transport", len);
                 Ok(len)
             }
             Err(e) => {
@@ -78,11 +78,11 @@ impl ThriftTransport {
 
     pub fn read(&mut self, buf: &mut [u8]) -> thrift::Result<usize> {
         let span =
-            span!(target: "thrift_transport", Level::INFO, "ThriftTransport::read", id=?self.id);
+            span!(target: "thrift_transport", Level::TRACE, "ThriftTransport::read", id=?self.id);
         let _enter = span.enter();
         match self.output.read(buf) {
             Ok(len) => {
-                event!(target: "thrift_transport", Level::INFO, "Read {} bytes from transport", len);
+                event!(target: "thrift_transport", Level::TRACE, "Read {} bytes from transport", len);
                 Ok(len)
             }
             Err(e) => {
@@ -93,14 +93,14 @@ impl ThriftTransport {
     }
     pub fn flush(&mut self) -> thrift::Result<()> {
         let span =
-            span!(target: "thrift_transport", Level::INFO, "ThriftTransport::flush", id=?self.id);
+            span!(target: "thrift_transport", Level::TRACE, "ThriftTransport::flush", id=?self.id);
         let _enter = span.enter();
         trace!(target: "thrift_transport", "Clearing output buffer");
         self.output.clear();
         let input_bytes = self.input.bytes.len();
         let mut input_protocol = TCompactInputProtocol::new(&mut self.input);
         let mut output_protocol = TCompactOutputProtocol::new(&mut self.output);
-        info!(target: "thrift_transport", "Processing a call(input_length={:?})", input_bytes);
+        debug!(target: "thrift_transport", "Processing a call(input_length={:?})", input_bytes);
         self.processor
             .process(&mut input_protocol, &mut output_protocol)?;
         trace!(target: "thrift_transport", "Finished processing a call(output_length={:?})", self.output.bytes.len());

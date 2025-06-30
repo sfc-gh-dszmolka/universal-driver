@@ -3,6 +3,9 @@ extern crate sf_core;
 extern crate tracing;
 extern crate tracing_subscriber;
 
+use arrow::array::{Array, Int8Array};
+use arrow::ffi_stream::ArrowArrayStreamReader;
+use arrow::ffi_stream::FFI_ArrowArrayStream;
 use sf_core::api_client::new_database_driver_v1_client;
 use sf_core::api_server::database_driver_v1::DatabaseDriverV1;
 use sf_core::thrift_gen::database_driver_v1::DatabaseDriverSyncHandler;
@@ -653,9 +656,7 @@ fn test_statement_execute_query() {
         .statement_set_sql_query(stmt.clone(), "SELECT 1 as value".to_string())
         .unwrap();
 
-    let result = client.statement_execute_query(stmt.clone()).unwrap();
-    assert!(result.stream.value > 0); // Should have a valid stream pointer
-    assert_eq!(result.rows_affected, 0); // SELECT typically affects 0 rows
+    client.statement_execute_query(stmt.clone()).unwrap();
 
     client.statement_release(stmt).unwrap();
     client.connection_release(conn).unwrap();
@@ -752,8 +753,7 @@ fn test_statement_lifecycle() {
         .unwrap();
 
     // Execute query
-    let result = client.statement_execute_query(stmt.clone()).unwrap();
-    assert!(result.stream.value > 0);
+    client.statement_execute_query(stmt.clone()).unwrap();
 
     // Clean up
     client.statement_release(stmt).unwrap();
@@ -825,8 +825,7 @@ fn test_full_adbc_workflow() {
     client
         .statement_set_sql_query(select_stmt.clone(), "SELECT * FROM test".to_string())
         .unwrap();
-    let select_result = client.statement_execute_query(select_stmt.clone()).unwrap();
-    assert!(select_result.stream.value > 0);
+    client.statement_execute_query(select_stmt.clone()).unwrap();
     client.statement_release(select_stmt).unwrap();
 
     // Transaction operations
@@ -882,4 +881,60 @@ fn test_snowflake_connection_settings() {
     println!("result: {:?}", result);
     assert!(result.is_ok());
     driver.handle_connection_release(conn_handle).unwrap();
+}
+
+#[test]
+fn test_snowflake_select_1() {
+    setup_logging();
+    let mut driver = new_database_driver_v1_client();
+
+    let conn_handle = driver.connection_new().unwrap();
+    driver
+        .connection_set_option_string(
+            conn_handle.clone(),
+            "account".to_string(),
+            PARAMETERS.account_name.clone().unwrap(),
+        )
+        .unwrap();
+    driver
+        .connection_set_option_string(
+            conn_handle.clone(),
+            "user".to_string(),
+            PARAMETERS.user.clone().unwrap(),
+        )
+        .unwrap();
+    driver
+        .connection_set_option_string(
+            conn_handle.clone(),
+            "password".to_string(),
+            PARAMETERS.password.clone().unwrap(),
+        )
+        .unwrap();
+    // driver.connection_set_option_string(conn_handle.clone(), "server_url".to_string(), PARAMETERS.server_url.clone().unwrap()).unwrap();
+    driver
+        .connection_init(conn_handle.clone(), "test_db".to_string())
+        .unwrap();
+    let stmt_handle = driver.statement_new(conn_handle.clone()).unwrap();
+    driver
+        .statement_set_sql_query(stmt_handle.clone(), "SELECT 1".to_string())
+        .unwrap();
+    let result = driver.statement_execute_query(stmt_handle.clone()).unwrap();
+    println!("result: {:?}", result);
+    let stream_ptr: *mut FFI_ArrowArrayStream = result.stream.into();
+    println!("stream_ptr: {:?}", stream_ptr as *mut u64);
+    let stream: FFI_ArrowArrayStream = unsafe { FFI_ArrowArrayStream::from_raw(stream_ptr) };
+    let mut reader = ArrowArrayStreamReader::try_new(stream).unwrap();
+    let record_batch = reader.next().unwrap().unwrap();
+    let array_ref = record_batch.column(0);
+    assert!(array_ref.data_type() == &arrow::datatypes::DataType::Int8);
+    assert!(
+        array_ref
+            .as_any()
+            .downcast_ref::<Int8Array>()
+            .unwrap()
+            .value(0)
+            == 1
+    );
+    driver.statement_release(stmt_handle).unwrap();
+    driver.connection_release(conn_handle).unwrap();
 }

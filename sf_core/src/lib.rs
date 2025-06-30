@@ -7,5 +7,6 @@ pub mod api_server;
 pub mod c_api;
 pub mod driver;
 pub mod handle_manager;
+mod rest;
 pub mod thrift_gen;
 mod transport;

@@ -45,7 +45,7 @@ impl<T> HandleManager<T> {
             value: Some(Arc::new(obj)),
         };
         handles.push(handle_value);
-        tracing::info!(target: "handle_manager", "Handle {:?} added successfully", handle);
+        tracing::trace!(target: "handle_manager", "Handle {:?} added successfully", handle);
         handle
     }
 
@@ -65,7 +65,7 @@ impl<T> HandleManager<T> {
         let magic = handle_value.magic;
         match handle_value.value.as_ref() {
             Some(val) if magic == handle.magic => {
-                tracing::info!(target: "handle_manager", "Handle retrieved successfully");
+                tracing::debug!(target: "handle_manager", "Handle retrieved successfully");
                 Some(val.clone())
             }
             Some(_) => {
@@ -100,7 +100,7 @@ impl<T> HandleManager<T> {
 
         match handle_value.value.take() {
             Some(_) => {
-                tracing::info!(target: "handle_manager", "Handle deleted successfully");
+                tracing::trace!(target: "handle_manager", "Handle deleted successfully");
                 true
             }
             None => {

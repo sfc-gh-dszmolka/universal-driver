@@ -2,6 +2,7 @@ use crate::c_api::SfCoreApi;
 use crate::thrift_gen::database_driver_v1::{DatabaseDriverSyncClient, TDatabaseDriverSyncClient};
 
 mod handle_transport;
+pub mod helpers;
 
 pub fn new_database_driver_v1_client() -> Box<dyn TDatabaseDriverSyncClient + Send> {
     let span = tracing::info_span!(target: "database_driver", "DatabaseDriverV1Client");
