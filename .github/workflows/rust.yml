@@ -125,7 +125,8 @@ jobs:
 
       - name: Build and run ODBC tests
         run: |
-          export DRIVER_PATH=$(pwd)/target/debug/libsfodbc.dylib
+          ls -l target/debug/
+          export DRIVER_PATH=$(pwd)/target/debug/libsfodbc.so
           export PARAMETER_PATH=$(pwd)/parameters.json
           cd odbc_tests
           mkdir -p cmake-build
