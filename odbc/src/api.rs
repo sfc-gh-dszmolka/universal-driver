@@ -1,12 +1,16 @@
 // ODBC API implementation will go here.
 
-use arrow::{array::{Int8Array, RecordBatch}, ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream}};
+use arrow::{
+    array::{Int8Array, RecordBatch},
+    ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream},
+};
 use odbc_sys as sql;
 use sf_core::{
     api_client,
     handle_manager::{Handle, HandleManager},
     thrift_gen::database_driver_v1::{
-        ConnectionHandle as TConnectionHandle, DatabaseHandle as TDatabaseHandle, ExecuteResult, StatementHandle, TDatabaseDriverSyncClient
+        ConnectionHandle as TConnectionHandle, DatabaseHandle as TDatabaseHandle, ExecuteResult,
+        StatementHandle, TDatabaseDriverSyncClient,
     },
 };
 use std::{collections::HashMap, slice, str, sync::Mutex};
@@ -47,9 +51,7 @@ struct Statement<'a> {
     state: StatementState,
 }
 
-pub unsafe extern "C" fn SQLAllocEnv(
-    output_handle: *mut sql::Handle,
-) -> i16 {
+pub unsafe extern "C" fn SQLAllocEnv(output_handle: *mut sql::Handle) -> i16 {
     eprintln!("RUST: SQLAllocEnv");
     SQLAllocHandle(sql::HandleType::Env, 0 as sql::Handle, output_handle)
 }
@@ -59,7 +61,7 @@ pub unsafe extern "C" fn SQLAllocConnect(
     output_handle: *mut sql::Handle,
 ) -> i16 {
     eprintln!("RUST: SQLAllocConnect");
-    return SQLAllocHandle(sql::HandleType::Dbc, environment_handle, output_handle)
+    return SQLAllocHandle(sql::HandleType::Dbc, environment_handle, output_handle);
 }
 
 /// # Safety
@@ -99,7 +101,11 @@ pub unsafe extern "C" fn SQLAllocHandle(
             let conn_ptr = input_handle as *mut Connection;
             let conn = conn_ptr.as_mut().unwrap();
             match &mut conn.state {
-                ConnectionState::Connected { client, db_handle, conn_handle } => {
+                ConnectionState::Connected {
+                    client,
+                    db_handle,
+                    conn_handle,
+                } => {
                     let stmt_handle = client.statement_new(conn_handle.clone()).unwrap();
                     let stmt = Box::new(Statement {
                         conn: conn,
@@ -120,17 +126,24 @@ pub unsafe extern "C" fn SQLAllocHandle(
             eprintln!("RUST: SQLAllocHandle: Desc: {:?}", handle_type);
             return sql::SqlReturn::ERROR.0;
         }
-        _ =>  {
-            eprintln!("RUST: SQLAllocHandle: unknown handle type: {:?}", handle_type);
+        _ => {
+            eprintln!(
+                "RUST: SQLAllocHandle: unknown handle type: {:?}",
+                handle_type
+            );
             return sql::SqlReturn::ERROR.0;
         }
     }
 }
 
-
 unsafe fn text_to_string(text: *const sql::Char, length: sql::Integer) -> String {
     if length == sql::NTS as i32 {
-        return unsafe { std::ffi::CStr::from_ptr(text as *const i8).to_str().unwrap().to_string() };
+        return unsafe {
+            std::ffi::CStr::from_ptr(text as *const i8)
+                .to_str()
+                .unwrap()
+                .to_string()
+        };
     } else {
         let text_slice = unsafe { std::slice::from_raw_parts(text, length as usize) };
         return String::from_utf8(text_slice.to_vec()).unwrap();
@@ -138,7 +151,7 @@ unsafe fn text_to_string(text: *const sql::Char, length: sql::Integer) -> String
 }
 
 /// # Safety
-/// 
+///
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn SQLExecDirect(
     statement_handle: sql::Handle,
@@ -149,10 +162,18 @@ pub unsafe extern "C" fn SQLExecDirect(
     let stmt = stmt_ptr.as_mut().unwrap();
     eprintln!("RUST: SQLExecDirect: {:?}", statement_handle);
     match &mut stmt.conn.state {
-        ConnectionState::Connected { client, db_handle, conn_handle } => {
+        ConnectionState::Connected {
+            client,
+            db_handle,
+            conn_handle,
+        } => {
             let query = text_to_string(statement_text, text_length);
-            client.statement_set_sql_query(stmt.stmt_handle.clone(), query).unwrap();
-            let result = client.statement_execute_query(stmt.stmt_handle.clone()).unwrap();
+            client
+                .statement_set_sql_query(stmt.stmt_handle.clone(), query)
+                .unwrap();
+            let result = client
+                .statement_execute_query(stmt.stmt_handle.clone())
+                .unwrap();
             stmt.state = StatementState::Executed { result: result };
             return sql::SqlReturn::SUCCESS.0;
         }
@@ -275,7 +296,6 @@ pub unsafe extern "C" fn SQLConnect(
     sql::SqlReturn::SUCCESS
 }
 
-
 fn to_env_attr(attribute: i32) -> Option<sql::EnvironmentAttribute> {
     match attribute {
         200 => Some(sql::EnvironmentAttribute::OdbcVersion),
@@ -386,23 +406,30 @@ pub unsafe extern "C" fn SQLDriverConnect(
         Err(_) => return sql::SqlReturn::ERROR.0,
     };
 
-
     for (key, value) in connection_string_map {
         match key.as_str() {
             "DRIVER" => {
                 // ignore
             }
             "ACCOUNT" => {
-                client.connection_set_option_string(conn_handle.clone(), "account".to_owned(), value).unwrap();
+                client
+                    .connection_set_option_string(conn_handle.clone(), "account".to_owned(), value)
+                    .unwrap();
             }
             "SERVER" => {
-                client.connection_set_option_string(conn_handle.clone(), "server".to_owned(), value).unwrap();
+                client
+                    .connection_set_option_string(conn_handle.clone(), "server".to_owned(), value)
+                    .unwrap();
             }
             "PWD" => {
-                client.connection_set_option_string(conn_handle.clone(), "password".to_owned(), value).unwrap();
+                client
+                    .connection_set_option_string(conn_handle.clone(), "password".to_owned(), value)
+                    .unwrap();
             }
             "UID" => {
-                client.connection_set_option_string(conn_handle.clone(), "user".to_owned(), value).unwrap();
+                client
+                    .connection_set_option_string(conn_handle.clone(), "user".to_owned(), value)
+                    .unwrap();
             }
             _ => {
                 eprintln!("RUST: SQLDriverConnect: unknown key: {:?}", key);
@@ -424,7 +451,6 @@ pub unsafe extern "C" fn SQLDriverConnect(
             sql::SqlReturn::ERROR.0
         }
     }
-
 }
 
 /// # Safety
@@ -448,11 +474,11 @@ pub unsafe extern "C" fn SQLDisconnect(_connection_handle: sql::Handle) -> sql::
     //             return sql::SqlReturn::ERROR;
     //         }
     //     }
-        // if let Some(db_handle) = conn.db_handle.take() {
-        //     if client.database_release(db_handle).is_err() {
-        //         return sql::SqlReturn::ERROR;
-        //     }
-        // }
+    // if let Some(db_handle) = conn.db_handle.take() {
+    //     if client.database_release(db_handle).is_err() {
+    //         return sql::SqlReturn::ERROR;
+    //     }
+    // }
     // }
 
     // sql::SqlReturn::SUCCESS
@@ -468,7 +494,8 @@ pub unsafe extern "C" fn SQLFetch(_statement_handle: sql::Handle) -> i16 {
     match &mut stmt.state {
         StatementState::Executed { result } => {
             let stream_ptr: *mut FFI_ArrowArrayStream = result.stream.clone().into();
-            let stream: FFI_ArrowArrayStream = unsafe { FFI_ArrowArrayStream::from_raw(stream_ptr) };
+            let stream: FFI_ArrowArrayStream =
+                unsafe { FFI_ArrowArrayStream::from_raw(stream_ptr) };
             let mut reader = ArrowArrayStreamReader::try_new(stream).unwrap();
             match reader.next() {
                 Some(Ok(record_batch)) => {
@@ -527,7 +554,10 @@ pub unsafe extern "C" fn SQLGetData(
     let stmt_ptr = statement_handle as *mut Statement;
     let stmt = stmt_ptr.as_mut().unwrap();
     match &mut stmt.state {
-        StatementState::Fetched { reader: _, record_batch } => {
+        StatementState::Fetched {
+            reader: _,
+            record_batch,
+        } => {
             eprintln!("RUST: SQLGetData: fetched: {:?}", record_batch);
             let array_ref = record_batch.column((col_or_param_num - 1) as usize);
             // TODO: handle other types
