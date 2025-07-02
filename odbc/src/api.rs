@@ -7,23 +7,22 @@ use arrow::{
 use odbc_sys as sql;
 use sf_core::{
     api_client,
-    handle_manager::{Handle, HandleManager},
     thrift_gen::database_driver_v1::{
         ConnectionHandle as TConnectionHandle, DatabaseHandle as TDatabaseHandle, ExecuteResult,
         StatementHandle, TDatabaseDriverSyncClient,
     },
 };
-use std::{collections::HashMap, slice, str, sync::Mutex};
+use std::{collections::HashMap, str};
 
 struct Environment {
     odbc_version: sql::Integer,
-    driver_version: i32,
 }
 
 enum ConnectionState {
     Disconnected,
     Connected {
         client: Box<dyn TDatabaseDriverSyncClient + Send>,
+        #[allow(dead_code)]
         db_handle: TDatabaseHandle,
         conn_handle: TConnectionHandle,
     },
@@ -39,6 +38,7 @@ enum StatementState {
         result: ExecuteResult,
     },
     Fetched {
+        #[allow(dead_code)]
         reader: ArrowArrayStreamReader,
         record_batch: RecordBatch,
     },
@@ -51,17 +51,108 @@ struct Statement<'a> {
     state: StatementState,
 }
 
-pub unsafe extern "C" fn SQLAllocEnv(output_handle: *mut sql::Handle) -> i16 {
-    eprintln!("RUST: SQLAllocEnv");
-    SQLAllocHandle(sql::HandleType::Env, 0 as sql::Handle, output_handle)
+fn env_from_handle<'a>(handle: sql::Handle) -> &'a mut Environment {
+    let env_ptr = handle as *mut Environment;
+    unsafe { env_ptr.as_mut().unwrap() }
 }
 
+fn conn_from_handle<'a>(handle: sql::Handle) -> &'a mut Connection {
+    let conn_ptr = handle as *mut Connection;
+    unsafe { conn_ptr.as_mut().unwrap() }
+}
+
+fn stmt_from_handle<'a>(handle: sql::Handle) -> &'a mut Statement<'a> {
+    let stmt_ptr = handle as *mut Statement;
+    unsafe { stmt_ptr.as_mut().unwrap() }
+}
+
+fn sql_alloc_handle(handle_type: sql::HandleType, input_handle: sql::Handle, output_handle: *mut sql::Handle) -> i16 {
+    eprintln!("RUST: SQLAllocHandle: {:?}", handle_type);
+    match handle_type {
+        sql::HandleType::Env => {
+            eprintln!("Allocating new env: SQLAllocHandle: {:?}", handle_type);
+            let env = Box::new(Environment {
+                odbc_version: 3,
+            });
+            let handle = Box::into_raw(env);
+            unsafe {
+                std::ptr::write(output_handle, handle as sql::Handle);
+            }
+            sql::SqlReturn::SUCCESS.0
+        }
+        sql::HandleType::Dbc => {
+            eprintln!("Allocating new dbc: SQLAllocHandle: {:?}", handle_type);
+            let dbc = Box::new(Connection {
+                state: ConnectionState::Disconnected,
+            });
+            // eprintln!("RUST: SQLAllocHandle: dbc: {:?}", dbc);
+            let handle = Box::into_raw(dbc);
+            // eprintln!("RUST: SQLAllocHandle: dbc: {:?}", handle);
+            unsafe {
+                *output_handle = handle as sql::Handle;
+            }
+            eprintln!("RUST: SQLAllocHandle: dbc: {:?}", handle);
+            sql::SqlReturn::SUCCESS.0
+        }
+        sql::HandleType::Stmt => {
+            eprintln!("Allocating new stmt: SQLAllocHandle: {:?}", handle_type);
+            let conn = conn_from_handle(input_handle);
+            match &mut conn.state {
+                ConnectionState::Connected {
+                    client,
+                    db_handle: _,
+                    conn_handle,
+                } => {
+                    let stmt_handle = client.statement_new(conn_handle.clone()).unwrap();
+                    let stmt = Box::new(Statement {
+                        conn,
+                        stmt_handle,
+                        state: StatementState::Created,
+                    });
+                    let handle = Box::into_raw(stmt);
+                    unsafe {
+                        std::ptr::write(output_handle, handle as sql::Handle);
+                    }
+                    sql::SqlReturn::SUCCESS.0
+                }
+                ConnectionState::Disconnected => {
+                    eprintln!("RUST: SQLAllocHandle: disconnected");
+                    sql::SqlReturn::ERROR.0
+                }
+            }
+        }
+        sql::HandleType::Desc => {
+            // Not implemented yet
+            eprintln!("RUST: SQLAllocHandle: Desc: {:?}", handle_type);
+            sql::SqlReturn::ERROR.0
+        }
+        _ => {
+            eprintln!(
+                "RUST: SQLAllocHandle: unknown handle type: {:?}",
+                handle_type
+            );
+            sql::SqlReturn::ERROR.0
+        }
+    }
+}
+
+/// # Safety
+/// This function is called by the ODBC driver manager.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn SQLAllocEnv(output_handle: *mut sql::Handle) -> i16 {
+    eprintln!("RUST: SQLAllocEnv");
+    sql_alloc_handle(sql::HandleType::Env, 0 as sql::Handle, output_handle)
+}
+
+/// # Safety
+/// This function is called by the ODBC driver manager.
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn SQLAllocConnect(
     environment_handle: sql::Handle,
     output_handle: *mut sql::Handle,
 ) -> i16 {
     eprintln!("RUST: SQLAllocConnect");
-    return SQLAllocHandle(sql::HandleType::Dbc, environment_handle, output_handle);
+    sql_alloc_handle(sql::HandleType::Dbc, environment_handle, output_handle)
 }
 
 /// # Safety
@@ -72,81 +163,20 @@ pub unsafe extern "C" fn SQLAllocHandle(
     input_handle: sql::Handle,
     output_handle: *mut sql::Handle,
 ) -> i16 {
-    eprintln!("RUST: SQLAllocHandle: {:?}", handle_type);
-    match handle_type {
-        sql::HandleType::Env => {
-            eprintln!("Allocating new env: SQLAllocHandle: {:?}", handle_type);
-            let env = Box::new(Environment {
-                odbc_version: 3,
-                driver_version: 1,
-            });
-            let handle = Box::into_raw(env);
-            std::ptr::write(output_handle, handle as sql::Handle);
-            return sql::SqlReturn::SUCCESS.0;
-        }
-        sql::HandleType::Dbc => {
-            eprintln!("Allocating new dbc: SQLAllocHandle: {:?}", handle_type);
-            let dbc = Box::new(Connection {
-                state: ConnectionState::Disconnected,
-            });
-            // eprintln!("RUST: SQLAllocHandle: dbc: {:?}", dbc);
-            let handle = Box::into_raw(dbc);
-            // eprintln!("RUST: SQLAllocHandle: dbc: {:?}", handle);
-            *output_handle = handle as sql::Handle;
-            eprintln!("RUST: SQLAllocHandle: dbc: {:?}", handle);
-            return sql::SqlReturn::SUCCESS.0;
-        }
-        sql::HandleType::Stmt => {
-            eprintln!("Allocating new stmt: SQLAllocHandle: {:?}", handle_type);
-            let conn_ptr = input_handle as *mut Connection;
-            let conn = conn_ptr.as_mut().unwrap();
-            match &mut conn.state {
-                ConnectionState::Connected {
-                    client,
-                    db_handle,
-                    conn_handle,
-                } => {
-                    let stmt_handle = client.statement_new(conn_handle.clone()).unwrap();
-                    let stmt = Box::new(Statement {
-                        conn: conn,
-                        stmt_handle: stmt_handle,
-                        state: StatementState::Created,
-                    });
-                    let handle = Box::into_raw(stmt);
-                    std::ptr::write(output_handle, handle as sql::Handle);
-                    return sql::SqlReturn::SUCCESS.0;
-                }
-                ConnectionState::Disconnected => {
-                    return sql::SqlReturn::ERROR.0;
-                }
-            };
-        }
-        sql::HandleType::Desc => {
-            // Not implemented yet
-            eprintln!("RUST: SQLAllocHandle: Desc: {:?}", handle_type);
-            return sql::SqlReturn::ERROR.0;
-        }
-        _ => {
-            eprintln!(
-                "RUST: SQLAllocHandle: unknown handle type: {:?}",
-                handle_type
-            );
-            return sql::SqlReturn::ERROR.0;
-        }
-    }
+    sql_alloc_handle(handle_type, input_handle, output_handle)
 }
 
-unsafe fn text_to_string(text: *const sql::Char, length: sql::Integer) -> String {
+fn text_to_string(text: *const sql::Char, length: sql::Integer) -> String {
     if length == sql::NTS as i32 {
-        return unsafe {
+        unsafe {
             std::ffi::CStr::from_ptr(text as *const i8)
                 .to_str()
                 .unwrap()
                 .to_string()
-        };
+        }
     } else {
         let text_slice = unsafe { std::slice::from_raw_parts(text, length as usize) };
-        return String::from_utf8(text_slice.to_vec()).unwrap();
+        String::from_utf8(text_slice.to_vec()).unwrap()
     }
 }
 
@@ -158,14 +188,13 @@ pub unsafe extern "C" fn SQLExecDirect(
     statement_text: *const sql::Char,
     text_length: sql::Integer,
 ) -> sql::RetCode {
-    let stmt_ptr = statement_handle as *mut Statement;
-    let stmt = stmt_ptr.as_mut().unwrap();
+    let stmt = stmt_from_handle(statement_handle);
     eprintln!("RUST: SQLExecDirect: {:?}", statement_handle);
     match &mut stmt.conn.state {
         ConnectionState::Connected {
             client,
-            db_handle,
-            conn_handle,
+            db_handle: _,
+            conn_handle: _,
         } => {
             let query = text_to_string(statement_text, text_length);
             client
@@ -174,12 +203,12 @@ pub unsafe extern "C" fn SQLExecDirect(
             let result = client
                 .statement_execute_query(stmt.stmt_handle.clone())
                 .unwrap();
-            stmt.state = StatementState::Executed { result: result };
-            return sql::SqlReturn::SUCCESS.0;
+            stmt.state = StatementState::Executed { result };
+            sql::SqlReturn::SUCCESS.0
         }
         ConnectionState::Disconnected => {
             eprintln!("RUST: SQLExecDirect: disconnected");
-            return sql::SqlReturn::ERROR.0;
+            sql::SqlReturn::ERROR.0
         }
     }
 }
@@ -198,17 +227,23 @@ pub unsafe extern "C" fn SQLFreeHandle(
     match handle_type {
         sql::HandleType::Env => {
             eprintln!("Freeing env: SQLFreeHandle: {:?}", handle_type);
-            drop(Box::from_raw(handle as *mut Environment));
+            unsafe {
+                drop(Box::from_raw(handle as *mut Environment));
+            }
             sql::SqlReturn::SUCCESS
         }
         sql::HandleType::Dbc => {
             eprintln!("Freeing dbc: SQLFreeHandle: {:?}", handle_type);
-            drop(Box::from_raw(handle as *mut Connection));
+            unsafe {
+                drop(Box::from_raw(handle as *mut Connection));
+            }
             sql::SqlReturn::SUCCESS
         }
         sql::HandleType::Stmt => {
             eprintln!("Freeing stmt: SQLFreeHandle: {:?}", handle_type);
-            drop(Box::from_raw(handle as *mut Statement));
+            unsafe {
+                drop(Box::from_raw(handle as *mut Statement));
+            }
             sql::SqlReturn::SUCCESS
         }
         sql::HandleType::Desc => {
@@ -224,8 +259,8 @@ pub unsafe extern "C" fn SQLFreeHandle(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn SQLConnect(
     connection_handle: sql::Handle,
-    server_name: *const sql::Char,
-    name_length1: sql::SmallInt,
+    _server_name: *const sql::Char,
+    _name_length1: sql::SmallInt,
     _user_name: *const sql::Char,
     _name_length2: sql::SmallInt,
     _authentication: *const sql::Char,
@@ -306,6 +341,8 @@ fn to_env_attr(attribute: i32) -> Option<sql::EnvironmentAttribute> {
     }
 }
 
+/// # Safety
+/// This function is called by the ODBC driver manager.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn SQLSetEnvAttr(
     environment_handle: sql::Handle,
@@ -314,8 +351,7 @@ pub unsafe extern "C" fn SQLSetEnvAttr(
     _string_length: sql::SmallInt,
 ) -> i16 {
     eprintln!("RUST: SQLSetEnvAttr: {:?}", environment_handle);
-    let env_ptr = environment_handle as *mut Environment;
-    let env = env_ptr.as_mut().unwrap();
+    let env = env_from_handle(environment_handle);
     let attr = to_env_attr(attribute);
     if attr.is_none() {
         eprintln!("RUST: SQLSetEnvAttr: unknown attribute: {:?}", attribute);
@@ -327,15 +363,17 @@ pub unsafe extern "C" fn SQLSetEnvAttr(
             eprintln!("RUST: SQLSetEnvAttr: OdbcVersion: {:?}", value);
             let int = value as sql::Integer;
             env.odbc_version = int;
-            return sql::SqlReturn::SUCCESS.0;
+            sql::SqlReturn::SUCCESS.0
         }
         _ => {
             eprintln!("RUST: SQLSetEnvAttr: unknown attribute: {:?}", attribute);
-            return sql::SqlReturn::ERROR.0;
+            sql::SqlReturn::ERROR.0
         }
     }
 }
 
+/// # Safety
+/// This function is called by the ODBC driver manager.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn SQLGetEnvAttr(
     environment_handle: sql::Handle,
@@ -344,8 +382,7 @@ pub unsafe extern "C" fn SQLGetEnvAttr(
     _string_length: sql::SmallInt,
 ) -> i16 {
     eprintln!("RUST: SQLGetEnvAttr: {:?}", environment_handle);
-    let env_ptr = environment_handle as *mut Environment;
-    let env = env_ptr.as_mut().unwrap();
+    let env = env_from_handle(environment_handle);
     let attr = to_env_attr(attribute);
     if attr.is_none() {
         eprintln!("RUST: SQLGetEnvAttr: unknown attribute: {:?}", attribute);
@@ -355,18 +392,20 @@ pub unsafe extern "C" fn SQLGetEnvAttr(
         sql::EnvironmentAttribute::OdbcVersion => {
             eprintln!("RUST: SQLGetEnvAttr: OdbcVersion: {:?}", value);
             let int_ptr = value as *mut sql::Integer;
-            std::ptr::write(int_ptr, env.odbc_version);
+            unsafe {
+                std::ptr::write(int_ptr, env.odbc_version);
+            }
             eprintln!("RUST: SQLGetEnvAttr: OdbcVersion: {:?}", env.odbc_version);
-            return sql::SqlReturn::SUCCESS.0;
+            sql::SqlReturn::SUCCESS.0
         }
         _ => {
             eprintln!("RUST: SQLGetEnvAttr: unknown attribute: {:?}", attribute);
-            return sql::SqlReturn::ERROR.0;
+            sql::SqlReturn::ERROR.0
         }
     }
 }
 
-fn parse_connection_string(connection_string: &String) -> HashMap<String, String> {
+fn parse_connection_string(connection_string: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for pair in connection_string.split(';') {
         let parts: Vec<&str> = pair.splitn(2, '=').collect();
@@ -382,7 +421,7 @@ fn parse_connection_string(connection_string: &String) -> HashMap<String, String
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn SQLDriverConnect(
     connection_handle: sql::Handle,
-    window_handle: sql::Handle,
+    _window_handle: sql::Handle,
     in_connection_string: *const sql::Char,
     in_string_length: sql::SmallInt,
     _out_connection_string: *mut sql::Char,
@@ -394,8 +433,7 @@ pub unsafe extern "C" fn SQLDriverConnect(
     let connection_string_map = parse_connection_string(&connection_string);
     eprintln!("RUST: SQLDriverConnect: {:?}", connection_string_map);
 
-    let connection_ptr = connection_handle as *mut Connection;
-    let connection = connection_ptr.as_mut().unwrap();
+    let connection = conn_from_handle(connection_handle);
     let mut client = api_client::new_database_driver_v1_client();
     let db_handle = match client.database_new() {
         Ok(h) => h,
@@ -440,9 +478,9 @@ pub unsafe extern "C" fn SQLDriverConnect(
     match client.connection_init(conn_handle.clone(), "".to_owned()) {
         Ok(_) => {
             connection.state = ConnectionState::Connected {
-                client: client,
-                db_handle: db_handle,
-                conn_handle: conn_handle,
+                client,
+                db_handle,
+                conn_handle,
             };
             sql::SqlReturn::SUCCESS.0
         }
@@ -487,10 +525,9 @@ pub unsafe extern "C" fn SQLDisconnect(_connection_handle: sql::Handle) -> sql::
 /// # Safety
 /// This function is called by the ODBC driver manager.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn SQLFetch(_statement_handle: sql::Handle) -> i16 {
+pub unsafe extern "C" fn SQLFetch(statement_handle: sql::Handle) -> i16 {
     eprintln!("RUST: SQLFetch");
-    let stmt_ptr = _statement_handle as *mut Statement;
-    let stmt = stmt_ptr.as_mut().unwrap();
+    let stmt = stmt_from_handle(statement_handle);
     match &mut stmt.state {
         StatementState::Executed { result } => {
             let stream_ptr: *mut FFI_ArrowArrayStream = result.stream.clone().into();
@@ -501,8 +538,8 @@ pub unsafe extern "C" fn SQLFetch(_statement_handle: sql::Handle) -> i16 {
                 Some(Ok(record_batch)) => {
                     eprintln!("RUST: SQLFetch: fetched: {:?}", record_batch);
                     stmt.state = StatementState::Fetched {
-                        reader: reader,
-                        record_batch: record_batch,
+                        reader,
+                        record_batch,
                     };
                     sql::SqlReturn::SUCCESS.0
                 }
@@ -551,8 +588,7 @@ pub unsafe extern "C" fn SQLGetData(
     _str_len_or_ind_ptr: *mut sql::Len,
 ) -> sql::RetCode {
     eprintln!("RUST: SQLGetData: {:?}", statement_handle);
-    let stmt_ptr = statement_handle as *mut Statement;
-    let stmt = stmt_ptr.as_mut().unwrap();
+    let stmt = stmt_from_handle(statement_handle);
     match &mut stmt.state {
         StatementState::Fetched {
             reader: _,
@@ -564,7 +600,9 @@ pub unsafe extern "C" fn SQLGetData(
             let array = array_ref.as_any().downcast_ref::<Int8Array>().unwrap();
             eprintln!("RUST: SQLGetData: array: {:?}", array);
             let value = array.value(0);
-            std::ptr::write(target_value_ptr as *mut i8, value as i8);
+            unsafe {
+                std::ptr::write(target_value_ptr as *mut i8, value);
+            }
             sql::SqlReturn::SUCCESS.0
         }
         _ => {
@@ -583,7 +621,9 @@ pub unsafe extern "C" fn SQLNumResultCols(
 ) -> sql::SqlReturn {
     eprintln!("RUST: SQLNumResultCols");
     let int_ptr = _column_count_ptr as *mut i32;
-    std::ptr::write(int_ptr, 1);
+    unsafe {
+        std::ptr::write(int_ptr, 1);
+    }
     sql::SqlReturn::SUCCESS
 }
 
@@ -595,15 +635,18 @@ pub unsafe extern "C" fn SQLRowCount(
     row_count_ptr: *mut sql::Len,
 ) -> sql::SqlReturn {
     eprintln!("RUST: SQLRowCount");
-    let stmt_ptr = statement_handle as *mut Statement;
-    let stmt = stmt_ptr.as_mut().unwrap();
+    let stmt = stmt_from_handle(statement_handle);
     let row_count_ptr = row_count_ptr as *mut i32;
     match &mut stmt.state {
         StatementState::Executed { result } => {
-            std::ptr::write(row_count_ptr, result.rows_affected as i32 as i32);
+            unsafe {
+                std::ptr::write(row_count_ptr, result.rows_affected as i32);
+            }
         }
         _ => {
-            std::ptr::write(row_count_ptr, 0);
+            unsafe {
+                std::ptr::write(row_count_ptr, 0);
+            }
         }
     }
     sql::SqlReturn::SUCCESS
