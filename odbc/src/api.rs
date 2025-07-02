@@ -66,14 +66,16 @@ fn stmt_from_handle<'a>(handle: sql::Handle) -> &'a mut Statement<'a> {
     unsafe { stmt_ptr.as_mut().unwrap() }
 }
 
-fn sql_alloc_handle(handle_type: sql::HandleType, input_handle: sql::Handle, output_handle: *mut sql::Handle) -> i16 {
+fn sql_alloc_handle(
+    handle_type: sql::HandleType,
+    input_handle: sql::Handle,
+    output_handle: *mut sql::Handle,
+) -> i16 {
     eprintln!("RUST: SQLAllocHandle: {:?}", handle_type);
     match handle_type {
         sql::HandleType::Env => {
             eprintln!("Allocating new env: SQLAllocHandle: {:?}", handle_type);
-            let env = Box::new(Environment {
-                odbc_version: 3,
-            });
+            let env = Box::new(Environment { odbc_version: 3 });
             let handle = Box::into_raw(env);
             unsafe {
                 std::ptr::write(output_handle, handle as sql::Handle);
@@ -638,16 +640,12 @@ pub unsafe extern "C" fn SQLRowCount(
     let stmt = stmt_from_handle(statement_handle);
     let row_count_ptr = row_count_ptr as *mut i32;
     match &mut stmt.state {
-        StatementState::Executed { result } => {
-            unsafe {
-                std::ptr::write(row_count_ptr, result.rows_affected as i32);
-            }
-        }
-        _ => {
-            unsafe {
-                std::ptr::write(row_count_ptr, 0);
-            }
-        }
+        StatementState::Executed { result } => unsafe {
+            std::ptr::write(row_count_ptr, result.rows_affected as i32);
+        },
+        _ => unsafe {
+            std::ptr::write(row_count_ptr, 0);
+        },
     }
     sql::SqlReturn::SUCCESS
 }
