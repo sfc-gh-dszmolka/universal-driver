@@ -1135,6 +1135,7 @@ dependencies = [
 name = "odbc"
 version = "0.1.0"
 dependencies = [
+ "arrow",
  "lazy_static",
  "odbc-sys",
  "sf_core",

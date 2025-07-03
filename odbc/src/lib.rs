@@ -4,6 +4,6 @@ extern crate thiserror;
 extern crate thrift;
 extern crate tracing;
 extern crate tracing_subscriber;
-#[macro_use]
-extern crate lazy_static;
+// #[macro_use]
+// extern crate lazy_static;
 extern crate odbc_sys;

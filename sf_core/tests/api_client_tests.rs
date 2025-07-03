@@ -48,7 +48,9 @@ use std::fs;
 
 lazy_static! {
     static ref PARAMETERS: Parameters = {
-        let parameters = fs::read_to_string("parameters.json").unwrap();
+        let parameter_path = std::env::var("PARAMETER_PATH").unwrap();
+        println!("Parameter path: {}", parameter_path);
+        let parameters = fs::read_to_string(parameter_path).unwrap();
         let parameters: ParametersFile = serde_json::from_str(&parameters).unwrap();
         println!(
             "Parameters: {:?}",

@@ -30,7 +30,9 @@ jobs:
           PARAMETERS_SECRET: ${{ secrets.PARAMETERS_SECRET }}
 
       - name: Run coverage
-        run: cargo llvm-cov --workspace --all-targets --all-features --output-path ./lcov.info
+        run: |
+          export PARAMETER_PATH=$(pwd)/parameters.json
+          cargo llvm-cov --workspace --all-targets --all-features --output-path ./lcov.info
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -81,6 +83,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install unixodbc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unixodbc-dev
+
       - name: Check
         run: cargo check --workspace
 
@@ -92,10 +99,40 @@ jobs:
         env:
           PARAMETERS_SECRET: ${{ secrets.PARAMETERS_SECRET }}
 
-      - name: Install unixodbc
+      - name: Test
+        run: |
+          export PARAMETER_PATH=$(pwd)/parameters.json
+          cargo test --workspace
+
+  odbc_tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y unixodbc-dev
+          sudo apt-get install -y unixodbc-dev cmake build-essential
 
-      - name: Test
-        run: cargo test --workspace
+      - name: Decode secrets
+        run: ./scripts/decode_secrets.sh
+        env:
+          PARAMETERS_SECRET: ${{ secrets.PARAMETERS_SECRET }}
+
+      - name: Build Rust ODBC driver
+        run: cargo build
+
+      - name: Build and run ODBC tests
+        run: |
+          ls -l target/debug/
+          export DRIVER_PATH=$(pwd)/target/debug/libsfodbc.so
+          export PARAMETER_PATH=$(pwd)/parameters.json
+          cd odbc_tests
+          mkdir -p cmake-build
+          cmake -B cmake-build \
+              -D ODBC_LIBRARY="/usr/lib/x86_64-linux-gnu/libodbc.so" \
+              -D ODBC_INCLUDE_DIR="/usr/include" \
+              .
+          cmake --build cmake-build -- -j $(nproc)
+          ctest -C Debug --test-dir cmake-build --output-on-failure
