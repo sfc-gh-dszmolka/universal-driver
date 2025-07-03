@@ -112,11 +112,11 @@ jobs:
         
       - name: Install dependencies
         run: |
+          set -x
           sudo apt-get update
           sudo apt-get install -y unixodbc unixodbc-dev curl odbcinst
           curl -O https://sfc-repo.snowflakecomputing.com/odbc/linux/3.9.0/snowflake-odbc-3.9.0.x86_64.deb
           sudo dpkg -i snowflake-odbc-3.9.0.x86_64.deb
-          ls -l /usr/lib/x86_64-linux-gnu/
           sudo sed -i 's/ODBCInstLib=.*/ODBCInstLib=/usr/lib/x86_64-linux-gnu/libodbcinst.so.2/' /usr/lib/snowflake/odbc/lib/simba.snowflake.ini
 
       - name: Decode secrets
