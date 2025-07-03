@@ -117,6 +117,11 @@ jobs:
           curl -O https://sfc-repo.snowflakecomputing.com/odbc/linux/3.9.0/snowflake-odbc-3.9.0.x86_64.deb
           sudo dpkg -i snowflake-odbc-3.9.0.x86_64.deb
 
+      - name: Decode secrets
+        run: ./scripts/decode_secrets.sh
+        env:
+          PARAMETERS_SECRET: ${{ secrets.PARAMETERS_SECRET }}
+
       - name: Run ODBC tests
         run: |
           export DRIVER_PATH=/usr/lib/snowflake/odbc/lib/libSnowflake.so
