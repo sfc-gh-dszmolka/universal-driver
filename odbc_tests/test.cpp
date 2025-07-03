@@ -55,6 +55,7 @@ TEST_CASE("Test ODBC connection", "[odbc]") {
         std::cerr << "Parsed parameters: " << params.to_str() << std::endl;
         std::stringstream ss;
         ss << "DRIVER=" << get_driver_path() << ";";
+        ss << "SERVER=" << params.get("testconnection").get("SNOWFLAKE_TEST_HOST").get<std::string>() << ";";
         ss << "ACCOUNT=" << params.get("testconnection").get("SNOWFLAKE_TEST_ACCOUNT").get<std::string>() << ";";
         ss << "UID=" << params.get("testconnection").get("SNOWFLAKE_TEST_USER").get<std::string>() << ";";
         ss << "PWD=" << params.get("testconnection").get("SNOWFLAKE_TEST_PASSWORD").get<std::string>() << ";";
