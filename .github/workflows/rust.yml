@@ -113,7 +113,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y unixodbc-dev curl odbcinst
+          sudo apt-get install -y unixodbc unixodbc-dev curl odbcinst
           curl -O https://sfc-repo.snowflakecomputing.com/odbc/linux/3.9.0/snowflake-odbc-3.9.0.x86_64.deb
           sudo dpkg -i snowflake-odbc-3.9.0.x86_64.deb
 
