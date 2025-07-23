@@ -245,13 +245,17 @@ pub async fn snowflake_query(
         query_context: RequestQueryContext { entries: None },
     };
 
+    let json_payload = serde_json::to_string_pretty(&query_request).unwrap();
+    tracing::debug!("JSON Body Sent:\n{}", json_payload);
+
     let request = client
         .post(&query_url)
         .header(
             "Authorization",
             &format!("Snowflake Token=\"{session_token}\""),
         )
-        .header("Accept", "application/snowflake")
+        // we might want to add some logic to handle different content types later
+        .header("Accept", "application/json")
         .header(
             "User-Agent",
             format!(
@@ -274,7 +278,6 @@ pub async fn snowflake_query(
 
     tracing::debug!("Query request: {:?}", request);
     tracing::debug!("Request headers: {:?}", request.headers());
-    tracing::debug!("Request body: {:?}", request.body().unwrap());
     tracing::debug!("Request method: {:?}", request.method());
     tracing::debug!("Request url: {:?}", request.url());
     tracing::debug!("Request version: {:?}", request.version());
