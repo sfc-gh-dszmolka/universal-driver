@@ -1,74 +1,15 @@
-extern crate lazy_static;
 extern crate sf_core;
-extern crate tracing;
-extern crate tracing_subscriber;
 
-use arrow::array::{Array, Int8Array, StringArray};
-use arrow::ffi_stream::ArrowArrayStreamReader;
-use arrow::ffi_stream::FFI_ArrowArrayStream;
+mod test_utils;
+
+use arrow::array::{Array, StringArray};
 use sf_core::api_client::new_database_driver_v1_client;
 use sf_core::api_server::database_driver_v1::DatabaseDriverV1;
 use sf_core::thrift_gen::database_driver_v1::DatabaseDriverSyncHandler;
 use sf_core::thrift_gen::database_driver_v1::InfoCode;
-use tracing::Level;
-use tracing_subscriber::EnvFilter;
-
-// Use serde to parse parameters.json
-use serde::{Deserialize, Serialize};
-
-#[derive(Deserialize, Serialize)]
-struct ParametersFile {
-    testconnection: Parameters,
-}
-
-#[derive(Deserialize, Serialize)]
-struct Parameters {
-    #[serde(rename = "SNOWFLAKE_TEST_ACCOUNT")]
-    account_name: Option<String>,
-    #[serde(rename = "SNOWFLAKE_TEST_USER")]
-    user: Option<String>,
-    #[serde(rename = "SNOWFLAKE_TEST_PASSWORD")]
-    password: Option<String>,
-    #[serde(rename = "SNOWFLAKE_TEST_DATABASE")]
-    database: Option<String>,
-    #[serde(rename = "SNOWFLAKE_TEST_SCHEMA")]
-    schema: Option<String>,
-    #[serde(rename = "SNOWFLAKE_TEST_WAREHOUSE")]
-    warehouse: Option<String>,
-    #[serde(rename = "SNOWFLAKE_TEST_HOST")]
-    host: Option<String>,
-    #[serde(rename = "SNOWFLAKE_TEST_ROLE")]
-    role: Option<String>,
-    #[serde(rename = "SNOWFLAKE_TEST_SERVER_URL")]
-    server_url: Option<String>,
-}
-
-use lazy_static::lazy_static;
-use std::fs;
-
-lazy_static! {
-    static ref PARAMETERS: Parameters = {
-        let parameter_path = std::env::var("PARAMETER_PATH").unwrap();
-        println!("Parameter path: {parameter_path}");
-        let parameters = fs::read_to_string(parameter_path).unwrap();
-        let parameters: ParametersFile = serde_json::from_str(&parameters).unwrap();
-        println!(
-            "Parameters: {:?}",
-            serde_json::to_string_pretty(&parameters).unwrap()
-        );
-        parameters.testconnection
-    };
-}
-
-fn setup_logging() {
-    let env_filter = EnvFilter::builder()
-        .with_default_directive(Level::DEBUG.into())
-        .from_env()
-        .unwrap();
-    let _ = tracing_subscriber::fmt::fmt()
-        .with_env_filter(env_filter)
-        .try_init();
-}
+use std::io::Write;
+use tempfile::NamedTempFile;
+use test_utils::{ArrowResultHelper, SnowflakeTestClient, get_parameters, setup_logging};
 
 // Database operation tests
 #[test]
@@ -910,9 +851,10 @@ fn test_snowflake_connection_settings() {
     driver.handle_database_init(db_handle.clone()).unwrap();
 
     // Get credentials from parameters.json
-    let account_name = PARAMETERS.account_name.clone().unwrap();
-    let user = PARAMETERS.user.clone().unwrap();
-    let password = PARAMETERS.password.clone().unwrap();
+    let parameters = get_parameters();
+    let account_name = parameters.account_name.clone().unwrap();
+    let user = parameters.user.clone().unwrap();
+    let password = parameters.password.clone().unwrap();
 
     // Create a new connection
     let conn_handle = driver.handle_connection_new().unwrap();
@@ -934,7 +876,7 @@ fn test_snowflake_connection_settings() {
         .handle_connection_set_option_string(conn_handle.clone(), "password".to_string(), password)
         .unwrap();
 
-    if let Some(server_url) = PARAMETERS.server_url.clone() {
+    if let Some(server_url) = parameters.server_url.clone() {
         driver
             .handle_connection_set_option_string(
                 conn_handle.clone(),
@@ -953,212 +895,116 @@ fn test_snowflake_connection_settings() {
 
 #[test]
 fn test_snowflake_select_1() {
-    setup_logging();
-    let mut driver = new_database_driver_v1_client();
-    let db_handle = driver.database_new().unwrap();
-    driver.database_init(db_handle.clone()).unwrap();
+    let mut client = SnowflakeTestClient::new();
+    let result = client.execute_query("SELECT 1");
 
-    let conn_handle = driver.connection_new().unwrap();
-    driver
-        .connection_set_option_string(
-            conn_handle.clone(),
-            "account".to_string(),
-            PARAMETERS.account_name.clone().unwrap(),
-        )
-        .unwrap();
-    driver
-        .connection_set_option_string(
-            conn_handle.clone(),
-            "user".to_string(),
-            PARAMETERS.user.clone().unwrap(),
-        )
-        .unwrap();
-    driver
-        .connection_set_option_string(
-            conn_handle.clone(),
-            "password".to_string(),
-            PARAMETERS.password.clone().unwrap(),
-        )
-        .unwrap();
-    // driver.connection_set_option_string(conn_handle.clone(), "server_url".to_string(), PARAMETERS.server_url.clone().unwrap()).unwrap();
-    driver
-        .connection_init(conn_handle.clone(), db_handle.clone())
-        .unwrap();
-    let stmt_handle = driver.statement_new(conn_handle.clone()).unwrap();
-    driver
-        .statement_set_sql_query(stmt_handle.clone(), "SELECT 1".to_string())
-        .unwrap();
-    let result = driver.statement_execute_query(stmt_handle.clone()).unwrap();
-    println!("result: {result:?}");
-    let stream_ptr: *mut FFI_ArrowArrayStream = result.stream.into();
-    println!("stream_ptr: {stream_ptr:?}");
-    let stream: FFI_ArrowArrayStream = unsafe { FFI_ArrowArrayStream::from_raw(stream_ptr) };
-    let mut reader = ArrowArrayStreamReader::try_new(stream).unwrap();
-    let record_batch = reader.next().unwrap().unwrap();
-    let array_ref = record_batch.column(0);
-    assert!(array_ref.data_type() == &arrow::datatypes::DataType::Int8);
-    assert!(
-        array_ref
-            .as_any()
-            .downcast_ref::<Int8Array>()
-            .unwrap()
-            .value(0)
-            == 1
-    );
-    driver.statement_release(stmt_handle).unwrap();
-    driver.connection_release(conn_handle).unwrap();
+    let mut arrow_helper = ArrowResultHelper::from_result(result);
+    let value = arrow_helper.first_int_value();
+    assert_eq!(value, 1);
 }
 
 #[test]
 fn test_create_temporary_stage() {
-    setup_logging();
-    let mut driver = new_database_driver_v1_client();
-    let db_handle = driver.database_new().unwrap();
-    driver.database_init(db_handle.clone()).unwrap();
+    let mut client = SnowflakeTestClient::new();
+    let stage_name = "TEST_STAGE";
+    let result = client.execute_query(&format!("create temporary stage {stage_name}"));
 
-    let conn_handle = driver.connection_new().unwrap();
-    driver
-        .connection_set_option_string(
-            conn_handle.clone(),
-            "account".to_string(),
-            PARAMETERS.account_name.clone().unwrap(),
-        )
-        .unwrap();
-    driver
-        .connection_set_option_string(
-            conn_handle.clone(),
-            "user".to_string(),
-            PARAMETERS.user.clone().unwrap(),
-        )
-        .unwrap();
-    driver
-        .connection_set_option_string(
-            conn_handle.clone(),
-            "password".to_string(),
-            PARAMETERS.password.clone().unwrap(),
-        )
-        .unwrap();
-    driver
-        .connection_init(conn_handle.clone(), db_handle.clone())
-        .unwrap();
-    let stmt_handle = driver.statement_new(conn_handle.clone()).unwrap();
-    let stage_name = "test_stage".to_uppercase();
-    driver
-        .statement_set_sql_query(
-            stmt_handle.clone(),
-            format!("create temporary stage {stage_name}").to_string(),
-        )
-        .unwrap();
+    let mut arrow_helper = ArrowResultHelper::from_result(result);
+    let batch = arrow_helper.assert_single_row();
+    let expected_message = format!("Stage area {stage_name} successfully created.");
 
-    let result = driver.statement_execute_query(stmt_handle.clone()).unwrap();
-    println!("result: {result:?}");
-
-    // Process the Arrow stream result to verify the response
-    let stream_ptr: *mut FFI_ArrowArrayStream = result.stream.into();
-    let stream: FFI_ArrowArrayStream = unsafe { FFI_ArrowArrayStream::from_raw(stream_ptr) };
-    let mut reader = ArrowArrayStreamReader::try_new(stream).unwrap();
-    let record_batch = reader.next().unwrap().unwrap();
-
-    // Verify exactly one row is returned
-    assert_eq!(record_batch.num_rows(), 1, "Expected exactly one row");
-
-    // Verify the message content
-    let array_ref = record_batch.column(0);
+    // Extract the string value from the batch
+    let array_ref = batch.column(0);
     let string_array = array_ref
         .as_any()
         .downcast_ref::<StringArray>()
         .expect("Expected string array");
+    let message = string_array.value(0).to_string();
 
-    let message = string_array.value(0);
-    let expected_message = format!("Stage area {stage_name} successfully created.");
     assert_eq!(
         message, expected_message,
         "Expected stage creation success message"
     );
-
-    // Ensure no more batches
-    assert!(reader.next().is_none(), "Expected no more record batches");
-
-    driver.statement_release(stmt_handle).unwrap();
-    driver.connection_release(conn_handle).unwrap();
 }
 
 #[test]
 fn test_put() {
-    setup_logging();
-    let mut driver = new_database_driver_v1_client();
-    let db_handle = driver.database_new().unwrap();
-    driver.database_init(db_handle.clone()).unwrap();
+    let mut client = SnowflakeTestClient::new();
+    let stage_name = "TEST_STAGE_PUT";
 
-    let conn_handle = driver.connection_new().unwrap();
-    driver
-        .connection_set_option_string(
-            conn_handle.clone(),
-            "account".to_string(),
-            PARAMETERS.account_name.clone().unwrap(),
-        )
-        .unwrap();
-    driver
-        .connection_set_option_string(
-            conn_handle.clone(),
-            "user".to_string(),
-            PARAMETERS.user.clone().unwrap(),
-        )
-        .unwrap();
-    driver
-        .connection_set_option_string(
-            conn_handle.clone(),
-            "password".to_string(),
-            PARAMETERS.password.clone().unwrap(),
-        )
-        .unwrap();
-    driver
-        .connection_init(conn_handle.clone(), db_handle.clone())
-        .unwrap();
-    let stmt_handle = driver.statement_new(conn_handle.clone()).unwrap();
+    // Create temporary stage
+    client.execute_query(&format!("create temporary stage {stage_name}"));
 
-    // Create a temporary stage
-    let stage_name = "test_stage_put".to_uppercase();
-    driver
-        .statement_set_sql_query(
-            stmt_handle.clone(),
-            format!("create temporary stage {stage_name}").to_string(),
-        )
-        .unwrap();
+    // Create test file
+    let mut test_file = NamedTempFile::new().unwrap();
+    test_file.write_all("test\n".as_bytes()).unwrap();
+    test_file.flush().unwrap();
 
-    driver.statement_execute_query(stmt_handle.clone()).unwrap();
+    // Execute PUT command
+    let put_sql = format!(
+        "PUT 'file://{test_file}' @{stage_name}",
+        test_file = test_file.path().to_str().unwrap().replace("\\", "/")
+    );
+    client.execute_query(&put_sql);
 
-    // Prepare a file to upload
-    let file_path = std::env::current_dir()
+    // Verify file was uploaded with LS command
+    let ls_result = client.execute_query(&format!("LS @{stage_name}"));
+
+    // Parse Arrow result to verify file listing
+    let mut arrow_helper = ArrowResultHelper::from_result(ls_result);
+    let batch = arrow_helper.assert_single_row();
+
+    // Verify LS result structure: [name, size, md5, last_modified]
+    assert_eq!(batch.num_columns(), 4, "LS should return 4 columns");
+
+    // Check file name (column 0)
+    let name_array = batch.column(0);
+    assert_eq!(
+        name_array.data_type(),
+        &arrow::datatypes::DataType::Utf8,
+        "File name should be string"
+    );
+    let name_str = name_array
+        .as_any()
+        .downcast_ref::<StringArray>()
         .unwrap()
-        .join("test_file.txt")
-        .to_str()
-        .unwrap()
-        .to_string();
-    fs::write(&file_path, "This is a test file.").expect("Failed to write test file");
+        .value(0);
 
-    // Use the PUT command to upload the file to the stage
-    driver
-        .statement_set_sql_query(
-            stmt_handle.clone(),
-            format!("PUT file://{file_path} @{stage_name}").to_string(),
-        )
-        .unwrap();
+    let temp_filename = test_file.path().file_name().unwrap().to_str().unwrap();
+    let expected_file_name = format!("{temp_filename}.gz");
+    let expected_full_path = format!("{}/{expected_file_name}", stage_name.to_lowercase());
+    assert_eq!(
+        name_str, expected_full_path,
+        "File name should match uploaded file"
+    );
 
-    // Execute the PUT query and expect it to fail with the not implemented error
-    let result = driver.statement_execute_query(stmt_handle.clone());
+    assert!(
+        name_str.ends_with(".gz"),
+        "File should be compressed with .gz"
+    );
+}
 
-    // Assert that the query failed with the expected error message
-    match result {
-        Err(e) => {
-            let error_message = format!("{e:?}");
-            assert!(
-                error_message.contains("Handling PUT / GET queries is not yet implemented"),
-                "Expected error message about PUT/GET not implemented, but got: {error_message}",
-            );
-        }
-        Ok(_) => {
-            panic!("Expected PUT query to fail with not implemented error, but it succeeded");
-        }
-    }
+#[test]
+fn test_get() {
+    let mut client = SnowflakeTestClient::new();
+    let stage_name = "TEST_STAGE_GET";
+
+    // Create test file and temporary stage
+    let mut test_file = NamedTempFile::new().unwrap();
+    test_file.write_all("a,b,c\n1,2,3\n".as_bytes()).unwrap();
+    test_file.flush().unwrap();
+    client.execute_query(&format!("create temporary stage {stage_name}"));
+
+    // Upload file using PUT (which now works)
+    let put_sql = format!(
+        "PUT 'file://{test_file}' @{stage_name}",
+        test_file = test_file.path().to_str().unwrap().replace("\\", "/")
+    );
+    client.execute_query(&put_sql);
+
+    // Try to download the file using GET (should fail)
+    let temp_filename = test_file.path().file_name().unwrap().to_str().unwrap();
+    let get_sql = format!("GET @{stage_name}/{temp_filename}.gz file://./downloaded/");
+    client.execute_query_expect_error(&get_sql, "Handling GET queries is not yet implemented");
+    println!("GET correctly failed with expected error: not yet implemented");
 }

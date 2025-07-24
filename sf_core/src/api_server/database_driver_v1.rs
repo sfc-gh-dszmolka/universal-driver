@@ -1,3 +1,4 @@
+use crate::api_server::file_transfer::transfer_file;
 use crate::driver::{Connection, Database, Setting, Statement};
 use crate::handle_manager::{Handle, HandleManager};
 use crate::rest::error::RestError;
@@ -570,11 +571,18 @@ impl DatabaseDriverSyncHandler for DatabaseDriverV1 {
                     )));
                 }
 
-                if let Some(command) = response.data.command {
-                    // TODO: Handle PUT / GET queries
-                    if command == "UPLOAD" || command == "DOWNLOAD" {
+                if let Some(ref command) = response.data.command {
+                    if command == "UPLOAD" {
+                        let file_transfer_data = response.data.to_file_transfer_data()?;
+                        rt.block_on(transfer_file(&file_transfer_data))?;
+                        stmt.state = StatementState::Executed;
+                        return Ok(ExecuteResult::new(
+                            Box::new(ArrowArrayStreamPtr::new(Vec::new())),
+                            0,
+                        ));
+                    } else if command == "DOWNLOAD" {
                         return Err(Error::from(RestError::Internal(
-                            "Handling PUT / GET queries is not yet implemented".to_string(),
+                            "Handling GET queries is not yet implemented".to_string(),
                         )));
                     }
                 }
@@ -585,7 +593,9 @@ impl DatabaseDriverSyncHandler for DatabaseDriverV1 {
                         general_purpose::STANDARD
                             .decode(rowset_base64)
                             .map_err(|e| {
-                                RestError::Internal(format!("Failed to decode rowset: {e}"))
+                                Error::from(RestError::InvalidSnowflakeResponse(format!(
+                                    "Failed to decode base64 rowset: {e}"
+                                )))
                             })?
                     }
                     None => {
@@ -595,7 +605,7 @@ impl DatabaseDriverSyncHandler for DatabaseDriverV1 {
                                 convert_single_row_to_arrow(rowset)?
                             }
                             None => {
-                                return Err(Error::from(RestError::Internal(
+                                return Err(Error::from(RestError::InvalidSnowflakeResponse(
                                     "Rowset not found in response".to_string(),
                                 )));
                             }
@@ -664,21 +674,22 @@ fn convert_single_row_to_arrow(rowset: Vec<Vec<Option<String>>>) -> Result<Vec<u
         .collect();
 
     // Create RecordBatch
-    let batch = RecordBatch::try_new(std::sync::Arc::new(schema), arrow_arrays)
-        .map_err(|e| RestError::Internal(format!("Failed to create RecordBatch: {e}")))?;
+    let batch = RecordBatch::try_new(std::sync::Arc::new(schema), arrow_arrays).map_err(|e| {
+        RestError::Internal(format!("Failed to create RecordBatch from rowset: {e}"))
+    })?;
 
     // Serialize to Arrow IPC format
     let mut bytes = Vec::new();
     let mut writer = StreamWriter::try_new(&mut bytes, &batch.schema())
-        .map_err(|e| RestError::Internal(format!("Failed to create StreamWriter: {e}")))?;
+        .map_err(|e| RestError::Internal(format!("Failed to create Arrow StreamWriter: {e}")))?;
 
     writer
         .write(&batch)
-        .map_err(|e| RestError::Internal(format!("Failed to write batch: {e}")))?;
+        .map_err(|e| RestError::Internal(format!("Failed to write Arrow batch: {e}")))?;
 
     writer
         .finish()
-        .map_err(|e| RestError::Internal(format!("Failed to finish writing: {e}")))?;
+        .map_err(|e| RestError::Internal(format!("Failed to finish Arrow writing: {e}")))?;
 
     Ok(bytes)
 }
