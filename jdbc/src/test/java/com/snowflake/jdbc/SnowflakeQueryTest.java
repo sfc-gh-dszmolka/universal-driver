@@ -38,6 +38,27 @@ public class SnowflakeQueryTest {
         props.setProperty("warehouse", params.getString("SNOWFLAKE_TEST_WAREHOUSE"));
         props.setProperty("account", params.getString("SNOWFLAKE_TEST_ACCOUNT"));
         
+        // Add optional parameters if specified
+        if (params.has("SNOWFLAKE_TEST_PORT")) {
+            props.setProperty("port", String.valueOf(params.getInt("SNOWFLAKE_TEST_PORT")));
+        }
+        
+        if (params.has("SNOWFLAKE_TEST_ROLE")) {
+            props.setProperty("role", params.getString("SNOWFLAKE_TEST_ROLE"));
+        }
+        
+        if (params.has("SNOWFLAKE_TEST_SERVER_URL")) {
+            props.setProperty("server_url", params.getString("SNOWFLAKE_TEST_SERVER_URL"));
+        }
+        
+        if (params.has("SNOWFLAKE_TEST_HOST")) {
+            props.setProperty("host", params.getString("SNOWFLAKE_TEST_HOST"));
+        }
+        
+        if (params.has("SNOWFLAKE_TEST_PROTOCOL")) {
+            props.setProperty("protocol", params.getString("SNOWFLAKE_TEST_PROTOCOL"));
+        }
+        
         return props;
     }
 
@@ -45,7 +66,11 @@ public class SnowflakeQueryTest {
     public void testSimpleSelect() throws Exception {
         // Load connection properties
         Properties props = loadConnectionProperties();
-        String url = props.getProperty("url", "jdbc:snowflake://" + props.getProperty("account") + ".snowflakecomputing.com");
+        String defaultUrl = "jdbc:snowflake://" + props.getProperty("account") + ".snowflakecomputing.com";
+        if (props.getProperty("port") != null) {
+            defaultUrl += ":" + props.getProperty("port");
+        }
+        String url = props.getProperty("url", defaultUrl);
         
         // Create connection
         SnowflakeDriver.empty();

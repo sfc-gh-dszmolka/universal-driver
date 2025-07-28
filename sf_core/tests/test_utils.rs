@@ -37,6 +37,10 @@ pub struct Parameters {
     pub role: Option<String>,
     #[serde(rename = "SNOWFLAKE_TEST_SERVER_URL")]
     pub server_url: Option<String>,
+    #[serde(rename = "SNOWFLAKE_TEST_PORT")]
+    pub port: Option<i64>,
+    #[serde(rename = "SNOWFLAKE_TEST_PROTOCOL")]
+    pub protocol: Option<String>,
 }
 
 use std::fs;
@@ -69,6 +73,7 @@ pub fn setup_logging() {
 pub struct SnowflakeTestClient {
     pub driver: Box<dyn sf_core::thrift_gen::database_driver_v1::TDatabaseDriverSyncClient + Send>,
     pub conn_handle: sf_core::thrift_gen::database_driver_v1::ConnectionHandle,
+    pub db_handle: sf_core::thrift_gen::database_driver_v1::DatabaseHandle,
 }
 
 impl Default for SnowflakeTestClient {
@@ -108,6 +113,64 @@ impl SnowflakeTestClient {
                 parameters.password.clone().unwrap(),
             )
             .unwrap();
+
+        // Set optional parameters if specified
+        if let Some(database) = parameters.database.clone() {
+            driver
+                .connection_set_option_string(conn_handle.clone(), "database".to_string(), database)
+                .unwrap();
+        }
+
+        if let Some(schema) = parameters.schema.clone() {
+            driver
+                .connection_set_option_string(conn_handle.clone(), "schema".to_string(), schema)
+                .unwrap();
+        }
+
+        if let Some(warehouse) = parameters.warehouse.clone() {
+            driver
+                .connection_set_option_string(
+                    conn_handle.clone(),
+                    "warehouse".to_string(),
+                    warehouse,
+                )
+                .unwrap();
+        }
+
+        if let Some(host) = parameters.host.clone() {
+            driver
+                .connection_set_option_string(conn_handle.clone(), "host".to_string(), host)
+                .unwrap();
+        }
+
+        if let Some(role) = parameters.role.clone() {
+            driver
+                .connection_set_option_string(conn_handle.clone(), "role".to_string(), role)
+                .unwrap();
+        }
+
+        if let Some(server_url) = parameters.server_url.clone() {
+            driver
+                .connection_set_option_string(
+                    conn_handle.clone(),
+                    "server_url".to_string(),
+                    server_url,
+                )
+                .unwrap();
+        }
+
+        if let Some(port) = parameters.port {
+            driver
+                .connection_set_option_int(conn_handle.clone(), "port".to_string(), port)
+                .unwrap();
+        }
+
+        if let Some(protocol) = parameters.protocol.clone() {
+            driver
+                .connection_set_option_string(conn_handle.clone(), "protocol".to_string(), protocol)
+                .unwrap();
+        }
+
         driver
             .connection_init(conn_handle.clone(), db_handle.clone())
             .unwrap();
@@ -115,6 +178,7 @@ impl SnowflakeTestClient {
         Self {
             driver,
             conn_handle,
+            db_handle,
         }
     }
 
@@ -156,6 +220,19 @@ impl SnowflakeTestClient {
             Ok(_) => {
                 panic!("Expected query to fail with '{expected_error}' error, but it succeeded");
             }
+        }
+    }
+}
+
+impl Drop for SnowflakeTestClient {
+    fn drop(&mut self) {
+        // Release the connection when the client is dropped
+        if let Err(e) = self.driver.connection_release(self.conn_handle.clone()) {
+            eprintln!("Warning: Failed to release connection in Drop: {e:?}");
+        }
+        // Release the database handle
+        if let Err(e) = self.driver.database_release(self.db_handle.clone()) {
+            eprintln!("Warning: Failed to release database handle in Drop: {e:?}");
         }
     }
 }

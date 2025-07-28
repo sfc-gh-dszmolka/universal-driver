@@ -59,6 +59,18 @@ TEST_CASE("Test ODBC connection", "[odbc]") {
         ss << "ACCOUNT=" << params.get("testconnection").get("SNOWFLAKE_TEST_ACCOUNT").get<std::string>() << ";";
         ss << "UID=" << params.get("testconnection").get("SNOWFLAKE_TEST_USER").get<std::string>() << ";";
         ss << "PWD=" << params.get("testconnection").get("SNOWFLAKE_TEST_PASSWORD").get<std::string>() << ";";
+        
+        // Add optional parameters if specified
+        if (params.get("testconnection").contains("SNOWFLAKE_TEST_PORT")) {
+            double port_val = params.get("testconnection").get("SNOWFLAKE_TEST_PORT").get<double>();
+            ss << "PORT=" << static_cast<int>(port_val) << ";";
+        }
+        if (params.get("testconnection").contains("SNOWFLAKE_TEST_PROTOCOL")) {
+            ss << "PROTOCOL=" << params.get("testconnection").get("SNOWFLAKE_TEST_PROTOCOL").get<std::string>() << ";";
+        }
+        if (params.get("testconnection").contains("SNOWFLAKE_TEST_DATABASE")) {
+            ss << "DATABASE=" << params.get("testconnection").get("SNOWFLAKE_TEST_DATABASE").get<std::string>() << ";";
+        }
 
         std::cerr << "Connection string: " << ss.str() << std::endl;
 
