@@ -1,6 +1,8 @@
 use crate::api_server::database_driver_v1::DatabaseDriverV1;
 use crate::handle_manager::Handle;
+use crate::logging;
 use crate::transport::{TRANSPORT_HANDLE_MANAGER, ThriftTransport};
+use std::fmt::Debug;
 use std::sync::Mutex;
 
 #[repr(C)]
@@ -27,6 +29,18 @@ impl CApiHandle {
         Handle {
             id: self.id,
             magic: self.magic,
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn sf_core_init_logger(callback: logging::CLogCallback) -> u32 {
+    let config = logging::LoggingConfig::new(callback, "core.log".to_string());
+    match logging::init_logging(config) {
+        Ok(_) => 0,
+        Err(e) => {
+            eprintln!("Failed to initialize logging: {e:?}");
+            1
         }
     }
 }
