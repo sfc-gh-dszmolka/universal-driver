@@ -2,8 +2,8 @@ use std::ffi::{CString, c_char};
 use std::fmt::Debug;
 use tracing::field::Field;
 use tracing::{Event, Level, Subscriber};
+use tracing_subscriber::Layer;
 use tracing_subscriber::layer::Context;
-use tracing_subscriber::{Layer, registry};
 
 pub type CLogCallback = unsafe extern "C" fn(
     level: u32,
@@ -25,7 +25,7 @@ impl CallbackLayer {
 
 impl<S> Layer<S> for CallbackLayer
 where
-    S: Subscriber + for<'a> registry::LookupSpan<'a>,
+    S: Subscriber,
 {
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
         let level = match *event.metadata().level() {
