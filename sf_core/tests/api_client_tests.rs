@@ -1,14 +1,9 @@
-extern crate sf_core;
+pub mod common;
 
-mod test_utils;
-
+use common::test_utils::*;
 use sf_core::api_client::new_database_driver_v1_client;
 use sf_core::thrift_gen::database_driver_v1::InfoCode;
 use std::fs;
-use test_utils::{
-    ArrowResultHelper, SnowflakeTestClient, create_test_file, decompress_gzipped_file,
-    setup_logging,
-};
 
 // Database operation tests
 #[test]
@@ -847,7 +842,7 @@ fn test_snowflake_select_1() {
     let result = client.execute_query("SELECT 1");
 
     let mut arrow_helper = ArrowResultHelper::from_result(result);
-    arrow_helper.assert_equals_single_value("1");
+    arrow_helper.assert_equals_single_value(String::from("1"));
 }
 
 #[test]
@@ -858,7 +853,7 @@ fn test_create_temporary_stage() {
 
     let mut arrow_helper = ArrowResultHelper::from_result(result);
     arrow_helper
-        .assert_equals_single_value(&format!("Stage area {stage_name} successfully created."));
+        .assert_equals_single_value(format!("Stage area {stage_name} successfully created."));
 }
 
 #[test]
@@ -886,7 +881,7 @@ fn test_put_select() {
 
     // Verify the data matches what we uploaded
     let mut arrow_helper = ArrowResultHelper::from_result(result);
-    arrow_helper.assert_equals_single_row(vec!["1", "2", "3"]);
+    arrow_helper.assert_equals_single_row(vec!["1".to_string(), "2".to_string(), "3".to_string()]);
 }
 
 #[test]
@@ -911,7 +906,9 @@ fn test_put_ls() {
     // Verify file was uploaded with LS command
     let expected_file_name = format!("{}/test_put_ls.csv.gz", stage_name.to_lowercase()); // File is compressed by default
     let ls_result = client.execute_query(&format!("LS @{stage_name}"));
-    let result_vector = ArrowResultHelper::from_result(ls_result).transform_into_string_array();
+    let result_vector = ArrowResultHelper::from_result(ls_result)
+        .transform_into_array::<String>()
+        .unwrap();
     assert_eq!(
         result_vector[0][0], expected_file_name,
         "File should be listed in stage"
@@ -1100,7 +1097,9 @@ fn test_put_wildcard_question_mark() {
     client.execute_query(&put_sql);
 
     let ls_result = client.execute_query(&format!("LS @{stage_name}"));
-    let result_vector = ArrowResultHelper::from_result(ls_result).transform_into_string_array();
+    let result_vector = ArrowResultHelper::from_result(ls_result)
+        .transform_into_array::<String>()
+        .unwrap();
 
     for i in 1..=5 {
         let expected_file_name = format!(
@@ -1172,7 +1171,9 @@ fn test_put_wildcard_star() {
     client.execute_query(&put_sql);
 
     let ls_result = client.execute_query(&format!("LS @{stage_name}"));
-    let result_vector = ArrowResultHelper::from_result(ls_result).transform_into_string_array();
+    let result_vector = ArrowResultHelper::from_result(ls_result)
+        .transform_into_array::<String>()
+        .unwrap();
 
     for i in 1..=5 {
         let expected_file_name = format!(
