@@ -25,7 +25,7 @@ pub struct Request {
     pub query_context: QueryContext,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct BindParameter {
     #[serde(rename = "type")]
     pub type_: String,
@@ -36,7 +36,7 @@ pub struct BindParameter {
     pub schema: Option<BindingSchema>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct BindingSchema {}
 
 #[derive(Serialize)]
