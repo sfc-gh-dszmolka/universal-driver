@@ -32,16 +32,7 @@ std::string get_private_key_path(picojson::object& params) {
 std::string get_private_key_connection_string() {
   auto params = get_test_parameters("testconnection");
   std::stringstream ss;
-  ss << "DRIVER=" << get_driver_path() << ";";
-  add_param_required<std::string>(ss, params, "SNOWFLAKE_TEST_HOST", "SERVER");
-  add_param_required<std::string>(ss, params, "SNOWFLAKE_TEST_ACCOUNT", "ACCOUNT");
-  add_param_required<std::string>(ss, params, "SNOWFLAKE_TEST_USER", "UID");
-  add_param_optional<std::string>(ss, params, "SNOWFLAKE_TEST_WAREHOUSE", "WAREHOUSE");
-  add_param_optional<std::string>(ss, params, "SNOWFLAKE_TEST_ROLE", "ROLE");
-  add_param_optional<std::string>(ss, params, "SNOWFLAKE_TEST_SCHEMA", "SCHEMA");
-  add_param_optional<std::string>(ss, params, "SNOWFLAKE_TEST_DATABASE", "DATABASE");
-  add_param_optional<std::string>(ss, params, "SNOWFLAKE_TEST_PORT", "PORT");
-  add_param_optional<std::string>(ss, params, "SNOWFLAKE_TEST_PROTOCOL", "PROTOCOL");
+  read_default_params(ss, params);
   add_param_optional<std::string>(ss, params, "SNOWFLAKE_TEST_PRIVATE_KEY_PASSWORD",
                                   "PRIV_KEY_FILE_PWD");
   ss << "AUTHENTICATOR=SNOWFLAKE_JWT;";
@@ -62,21 +53,20 @@ TEST_CASE("Private Key Authentication - Basic Connection", "[private_key_auth]")
                          0, NULL, SQL_DRIVER_NOPROMPT);
   CHECK_ODBC(ret, dbc);
 
-  // TODO: Uncomment this when we have string support in the driver
-  //   {
-  //     StatementHandleWrapper stmt = dbc.createStatementHandle();
-  //     ret = SQLExecDirect(stmt.getHandle(), (SQLCHAR*)"SELECT CURRENT_USER()", SQL_NTS);
-  //     CHECK_ODBC(ret, stmt);
+  {
+    StatementHandleWrapper stmt = dbc.createStatementHandle();
+    ret = SQLExecDirect(stmt.getHandle(), (SQLCHAR*)"SELECT CURRENT_USER()", SQL_NTS);
+    CHECK_ODBC(ret, stmt);
 
-  //     ret = SQLFetch(stmt.getHandle());
-  //     CHECK_ODBC(ret, stmt);
+    ret = SQLFetch(stmt.getHandle());
+    CHECK_ODBC(ret, stmt);
 
-  //     SQLCHAR username[256];
-  //     ret = SQLGetData(stmt.getHandle(), 1, SQL_C_CHAR, username, sizeof(username), NULL);
-  //     CHECK_ODBC(ret, stmt);
+    SQLCHAR username[256];
+    ret = SQLGetData(stmt.getHandle(), 1, SQL_C_CHAR, username, sizeof(username), NULL);
+    CHECK_ODBC(ret, stmt);
 
-  //     INFO("Connected as user: " << username);
-  //   }
+    INFO("Connected as user: " << username);
+  }
 
   SQLDisconnect(dbc.getHandle());
 }

@@ -601,6 +601,11 @@ pub unsafe extern "C" fn SQLDriverConnect(
                     )
                     .unwrap();
             }
+            "TOKEN" => {
+                client
+                    .connection_set_option_string(conn_handle.clone(), "token".to_owned(), value)
+                    .unwrap();
+            }
             _ => {
                 tracing::warn!("SQLDriverConnect: unknown connection string key: {:?}", key);
             }
