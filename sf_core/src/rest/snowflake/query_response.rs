@@ -1,12 +1,8 @@
-use crate::arrow_utils::convert_result_to_arrow;
 use crate::chunks::ChunkDownloadData;
 use crate::file_manager;
 use crate::rest::RestError;
-use base64::Engine;
-use base64::engine::general_purpose;
 use serde::Deserialize;
 use std::collections::HashMap;
-
 // TODO: Delete all unused fields when we are sure they are not needed
 
 #[derive(Deserialize)]
@@ -23,15 +19,17 @@ pub struct Response {
 #[derive(Deserialize)]
 pub struct Data {
     #[serde(rename = "rowset")]
-    pub rowset: Option<Vec<Vec<Option<String>>>>,
+    pub rowset: Option<Vec<Vec<String>>>,
     #[serde(rename = "rowsetBase64")]
     pub rowset_base64: Option<String>,
+    #[serde(rename = "rowtype")]
+    pub(crate) row_type: Option<Vec<RowType>>,
     #[serde(rename = "command")]
     pub command: Option<String>,
-    #[serde(rename = "autoCompress")]
-    auto_compress: Option<bool>,
 
     // file transfer response data
+    #[serde(rename = "autoCompress")]
+    auto_compress: Option<bool>,
     #[serde(rename = "src_locations")]
     src_locations: Option<Vec<String>>,
     #[serde(rename = "stageInfo")]
@@ -44,8 +42,6 @@ pub struct Data {
     //unused fields
     #[serde(rename = "parameters")]
     _parameters: Option<Vec<NameValueParameter>>,
-    #[serde(rename = "rowType")]
-    _row_type: Option<Vec<RowType>>,
     #[serde(rename = "total")]
     _total: Option<i64>,
     #[serde(rename = "returned")]
@@ -164,9 +160,8 @@ pub struct NameValueParameter {
 
 #[derive(Deserialize)]
 pub struct RowType {
-    //unused fields
     #[serde(rename = "name")]
-    _name: String,
+    pub name: String,
     #[serde(rename = "fields")]
     _fields: Option<Vec<FieldMetadata>>,
     #[serde(rename = "byteLength")]
@@ -174,13 +169,13 @@ pub struct RowType {
     #[serde(rename = "length")]
     _length: Option<i64>,
     #[serde(rename = "type")]
-    _type_: String,
+    pub type_: String,
     #[serde(rename = "precision")]
-    _precision: i64,
+    _precision: Option<i64>,
     #[serde(rename = "scale")]
-    _scale: i64,
+    pub scale: Option<i64>,
     #[serde(rename = "nullable")]
-    _nullable: bool,
+    pub nullable: bool,
 }
 
 #[derive(Deserialize)]
@@ -359,32 +354,6 @@ impl Data {
             .map(|chunk| ChunkDownloadData::new(&chunk.url, chunk_headers))
             .collect();
         Some(chunk_download_data)
-    }
-
-    pub fn to_rowset_bytes(&self) -> Result<Vec<u8>, RestError> {
-        match self.rowset_base64.as_ref() {
-            Some(rowset_base64) => {
-                // Decode the base64 string to bytes
-                general_purpose::STANDARD
-                    .decode(rowset_base64)
-                    .map_err(|e| {
-                        RestError::InvalidSnowflakeResponse(format!(
-                            "Failed to decode base64 rowset: {e}"
-                        ))
-                    })
-            }
-            None => {
-                match self.rowset.as_ref() {
-                    Some(rowset) => {
-                        // Convert JSON rowset to Arrow format
-                        convert_result_to_arrow(rowset)
-                    }
-                    None => Err(RestError::InvalidSnowflakeResponse(
-                        "Rowset not found in response".to_string(),
-                    )),
-                }
-            }
-        }
     }
 }
 

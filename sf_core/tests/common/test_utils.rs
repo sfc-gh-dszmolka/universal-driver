@@ -2,16 +2,10 @@ extern crate sf_core;
 extern crate tracing;
 extern crate tracing_subscriber;
 
-use arrow::array::{
-    Array, ArrowPrimitiveType, Float64Array, Int8Array, Int64Array, PrimitiveArray, StringArray,
-    StructArray,
-};
-use arrow::ffi_stream::ArrowArrayStreamReader;
-use arrow::ffi_stream::FFI_ArrowArrayStream;
+use arrow::array::{Array, ArrowPrimitiveType, PrimitiveArray, StructArray};
 use flate2::read::GzDecoder;
 use sf_core::api_client::new_database_driver_v1_client;
 use sf_core::thrift_gen::database_driver_v1::{ArrowArrayPtr, ArrowSchemaPtr};
-use std::fmt::Debug;
 use std::fs;
 use tracing::Level;
 use tracing_subscriber::EnvFilter;
@@ -223,27 +217,6 @@ impl SnowflakeTestClient {
     pub fn create_temporary_stage(&mut self, stage_name: &str) {
         self.execute_query(&format!("create temporary stage {stage_name}"));
     }
-
-    pub fn _put_file_with_options(
-        &mut self,
-        file_path: &std::path::Path,
-        stage_name: &str,
-        options: &str,
-    ) {
-        let put_sql = format!(
-            "PUT 'file://{}' @{stage_name} {options}",
-            file_path.to_str().unwrap().replace("\\", "/")
-        );
-        self.execute_query(&put_sql);
-    }
-
-    pub fn _get_file(&mut self, stage_file_path: &str, download_dir: &std::path::Path) {
-        let get_sql = format!(
-            "GET @{stage_file_path} file://{}/",
-            download_dir.to_str().unwrap().replace("\\", "/")
-        );
-        self.execute_query(&get_sql);
-    }
 }
 
 impl Drop for SnowflakeTestClient {
@@ -256,166 +229,6 @@ impl Drop for SnowflakeTestClient {
         if let Err(e) = self.driver.database_release(self.db_handle.clone()) {
             tracing::warn!("Failed to release database handle in Drop: {e:?}");
         }
-    }
-}
-
-#[derive(Debug)]
-pub enum ArrowExtractError {
-    UnsupportedType,
-}
-
-pub trait ArrowExtractValue: Sized {
-    fn extract_int8(_value: i8) -> Result<Self, ArrowExtractError> {
-        Err(ArrowExtractError::UnsupportedType)
-    }
-    fn extract_int64(_value: i64) -> Result<Self, ArrowExtractError> {
-        Err(ArrowExtractError::UnsupportedType)
-    }
-    fn extract_float64(_value: f64) -> Result<Self, ArrowExtractError> {
-        Err(ArrowExtractError::UnsupportedType)
-    }
-    fn extract_string(_value: &str) -> Result<Self, ArrowExtractError> {
-        Err(ArrowExtractError::UnsupportedType)
-    }
-}
-
-impl ArrowExtractValue for String {
-    fn extract_int8(value: i8) -> Result<String, ArrowExtractError> {
-        Ok(value.to_string())
-    }
-
-    fn extract_int64(value: i64) -> Result<String, ArrowExtractError> {
-        Ok(value.to_string())
-    }
-
-    fn extract_float64(value: f64) -> Result<String, ArrowExtractError> {
-        Ok(value.to_string())
-    }
-
-    fn extract_string(value: &str) -> Result<String, ArrowExtractError> {
-        Ok(value.to_string())
-    }
-}
-
-impl ArrowExtractValue for i64 {
-    fn extract_int8(value: i8) -> Result<i64, ArrowExtractError> {
-        Ok(value as i64)
-    }
-    fn extract_int64(value: i64) -> Result<i64, ArrowExtractError> {
-        Ok(value)
-    }
-}
-
-/// Helper for processing Arrow stream results
-pub struct ArrowResultHelper {
-    reader: ArrowArrayStreamReader,
-}
-
-impl ArrowResultHelper {
-    /// Creates a new Arrow result helper from an ExecuteResult
-    pub fn from_result(result: sf_core::thrift_gen::database_driver_v1::ExecuteResult) -> Self {
-        let stream_ptr: *mut FFI_ArrowArrayStream = result.stream.into();
-        let stream: FFI_ArrowArrayStream = unsafe { FFI_ArrowArrayStream::from_raw(stream_ptr) };
-        let reader = ArrowArrayStreamReader::try_new(stream).unwrap();
-        Self { reader }
-    }
-
-    /// Gets the next record batch
-    pub fn next_batch(&mut self) -> Option<arrow::record_batch::RecordBatch> {
-        match self.reader.next() {
-            Some(Ok(batch)) => Some(batch),
-            Some(Err(e)) => {
-                tracing::error!("Error reading record batch: {e}");
-                None
-            }
-            None => None,
-        }
-    }
-
-    /// Converts all result data to a 2D array of strings for easy comparison
-    pub fn transform_into_array<T: ArrowExtractValue>(
-        &mut self,
-    ) -> Result<Vec<Vec<T>>, ArrowExtractError> {
-        let mut all_rows = Vec::new();
-        while let Some(batch) = self.next_batch() {
-            for row_idx in 0..batch.num_rows() {
-                let mut row = Vec::new();
-                for col_idx in 0..batch.num_columns() {
-                    let column = batch.column(col_idx);
-                    let value = extract_value::<T>(column, row_idx)?;
-                    row.push(value);
-                }
-                all_rows.push(row);
-            }
-        }
-        Ok(all_rows)
-    }
-
-    /// Asserts that the result equals the expected 2D array
-    pub fn assert_equals_array<T: ArrowExtractValue + PartialEq + Debug>(
-        &mut self,
-        expected: Vec<Vec<T>>,
-    ) {
-        let actual = self.transform_into_array::<T>().unwrap();
-
-        assert_eq!(
-            actual, expected,
-            "Arrow result does not match expected array"
-        );
-    }
-
-    /// Convenience method for single row assertions
-    pub fn assert_equals_single_row<T: ArrowExtractValue + PartialEq + Debug>(
-        &mut self,
-        expected: Vec<T>,
-    ) {
-        self.assert_equals_array(vec![expected]);
-    }
-
-    /// Convenience method for single value assertions
-    pub fn assert_equals_single_value<T: ArrowExtractValue + PartialEq + Debug>(
-        &mut self,
-        expected: T,
-    ) {
-        self.assert_equals_array(vec![vec![expected]]);
-    }
-}
-
-fn extract_value<T: ArrowExtractValue>(
-    column: &dyn Array,
-    row_idx: usize,
-) -> Result<T, ArrowExtractError> {
-    use arrow::datatypes::DataType;
-    match column.data_type() {
-        DataType::Int8 => {
-            let int_array = column
-                .as_any()
-                .downcast_ref::<Int8Array>()
-                .expect("Expected int8 array");
-            T::extract_int8(int_array.value(row_idx))
-        }
-        DataType::Int64 => {
-            let int_array = column
-                .as_any()
-                .downcast_ref::<Int64Array>()
-                .expect("Expected int64 array");
-            T::extract_int64(int_array.value(row_idx))
-        }
-        DataType::Float64 => {
-            let float_array = column
-                .as_any()
-                .downcast_ref::<Float64Array>()
-                .expect("Expected float64 array");
-            T::extract_float64(float_array.value(row_idx))
-        }
-        DataType::Utf8 => {
-            let string_array = column
-                .as_any()
-                .downcast_ref::<StringArray>()
-                .expect("Expected string array");
-            T::extract_string(string_array.value(row_idx))
-        }
-        _ => Err(ArrowExtractError::UnsupportedType),
     }
 }
 
@@ -432,10 +245,10 @@ pub fn decompress_gzipped_file<P: AsRef<std::path::Path>>(file_path: P) -> std::
 
 pub fn create_test_file(
     temp_dir: &std::path::Path,
-    file_name: &str,
+    filename: &str,
     content: &str,
 ) -> std::path::PathBuf {
-    let file_path = temp_dir.join(file_name);
+    let file_path = temp_dir.join(filename);
     fs::write(&file_path, content).unwrap();
     file_path
 }
