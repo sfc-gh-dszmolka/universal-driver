@@ -1,20 +1,15 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pep249-dbapi"
+name = "snowflake-pep249-dbapi"
 version = "0.1.0"
-description = "A PEP 249 Database API 2.0 implementation with empty interface"
+description = "A PEP 249 Database API 2.0 implementation for Snowflake"
 readme = "README.md"
 license = {text = "MIT"}
-authors = [
-    {name = "Your Name", email = "your.email@example.com"}
-]
-maintainers = [
-    {name = "Your Name", email = "your.email@example.com"}
-]
-keywords = ["database", "api", "pep249", "dbapi", "python"]
+
+keywords = ["database", "api", "pep249", "dbapi", "python", "snowflake"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -22,37 +17,47 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 dependencies = [
     "thrift>=0.17.0",
     "pyarrow>=19.0.0",
 ]
 
+[project.urls]
+"Homepage" = "https://github.com/snowflakedb/universal-driver"
+"Bug Reports" = "https://github.com/snowflakedb/universal-driver/issues"
+"Source" = "https://github.com/snowflakedb/universal-driver"
+"Documentation" = "https://github.com/snowflakedb/universal-driver/blob/main/README.md"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pep249_dbapi*"]
+exclude = ["tests*", "reports*", "ci*"]
+
 [project.optional-dependencies]
+test = [
+    "pytest>=8",
+    "pytest-xdist",
+    "pytest-json-report",
+    "pytest-split",
+    "hypothesis",
+    "tox>=4.14",
+    "tox-uv>=1.8",
+    "snowflake-connector-python>=3.6.0",
+]
 dev = [
-    "pytest>=6.0",
-    "pytest-cov",
     "black",
     "flake8",
     "mypy",
 ]
-test = [
-    "pytest>=6.0",
-    "pytest-cov",
-]
 
-[project.urls]
-Homepage = "https://github.com/yourusername/pep249-dbapi"
-Repository = "https://github.com/yourusername/pep249-dbapi"
-Documentation = "https://pep249-dbapi.readthedocs.io/"
-"Bug Tracker" = "https://github.com/yourusername/pep249-dbapi/issues"
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -62,11 +67,11 @@ python_functions = ["test_*"]
 addopts = [
     "--strict-markers",
     "--strict-config",
-    "--verbose",
+    "-v",
 ]
 markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
+    "skip_reference(reason: str=''): skip when --connector=reference",
+    "skip_universal(reason: str=''): skip when --connector=universal",
 ]
 log_cli = true
 log_cli_level = "INFO"
@@ -78,7 +83,6 @@ source = ["pep249_dbapi"]
 omit = [
     "*/tests/*",
     "*/test_*",
-    "setup.py",
 ]
 
 [tool.coverage.report]
@@ -97,7 +101,7 @@ exclude_lines = [
 
 [tool.black]
 line-length = 88
-target-version = ['py37']
+target-version = ['py39']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -113,8 +117,21 @@ extend-exclude = '''
 )/
 '''
 
+[tool.flake8]
+max-line-length = 88
+extend-ignore = ["E203", "W503"]
+exclude = [
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    ".tox",
+    ".venv",
+    "thrift_gen",
+]
+
 [tool.mypy]
-python_version = "3.7"
+python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -131,4 +148,4 @@ strict_equality = true
 [[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
-disallow_incomplete_defs = false 
+disallow_incomplete_defs = false
