@@ -2,15 +2,15 @@ mod auth;
 pub mod query_request;
 pub mod query_response;
 
-use crate::auth::{Credentials, create_credentials};
+use crate::auth::{AuthError, Credentials, create_credentials};
 use crate::config::rest_parameters::ClientInfo;
 use crate::config::rest_parameters::{LoginParameters, QueryParameters};
-use crate::rest::error::RestError;
 use crate::rest::snowflake::auth::{
     AuthRequest, AuthRequestClientEnvironment, AuthRequestData, AuthResponse,
 };
 use reqwest;
 use serde_json;
+use snafu::{Location, ResultExt, Snafu};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing;
@@ -41,7 +41,7 @@ pub fn auth_request_data(login_parameters: &LoginParameters) -> Result<AuthReque
         ..Default::default()
     };
 
-    match create_credentials(login_parameters).map_err(RestError::AuthError)? {
+    match create_credentials(login_parameters).context(AuthenticationSnafu)? {
         Credentials::Password { username, password } => {
             data.login_name = Some(username);
             data.password = Some(password);
@@ -127,40 +127,25 @@ pub async fn snowflake_login(login_parameters: &LoginParameters) -> Result<Strin
                 login_parameters.client_info.os.clone()
             ),
         )
-        .header("Authorization", "Snowflake Token=\"None\"");
-    let request = request.build().unwrap();
-    let response = client.execute(request).await.map_err(|e| {
-        tracing::error!(error = %e, "HTTP request failed");
-        RestError::Internal(format!("HTTP request failed: {e}"))
+        .header("Authorization", "Snowflake Token=\"None\"")
+        .build()
+        .context(RequestConstructionSnafu { request: "login" })?;
+    let response = client.execute(request).await.context(CommunicationSnafu {
+        context: "Failed to execute login request",
     })?;
 
-    let status = response.status();
-    tracing::debug!(status = %status, "Received login response");
-
-    let response_text = response.text().await.unwrap_or_else(|_| {
-        tracing::error!("Failed to read response body");
-        "Unknown error".to_string()
-    });
-    tracing::debug!(response = %response_text, "Raw login response body");
-
-    if !status.is_success() {
-        tracing::error!(status = %status, error_text = %response_text, "Login request failed");
-        return Err(RestError::Internal(format!(
-            "Login failed with status {status}: {response_text}"
-        )));
-    }
-
-    // Parse the response
-    let auth_response: AuthResponse = serde_json::from_str(&response_text).map_err(|e| {
-        RestError::InvalidSnowflakeResponse(format!("Failed to parse login response: {e}"))
-    })?;
+    let auth_response = read_response_json::<AuthResponse>(response)
+        .await
+        .context(InvalidSnowflakeResponseSnafu)?;
 
     if !auth_response.success {
         let message = auth_response
             .message
             .unwrap_or_else(|| "Unknown error".to_string());
         tracing::error!(message = %message, "Snowflake login failed");
-        return Err(RestError::Status(status));
+        InvalidResponseSnafu { message }
+            .fail()
+            .context(InvalidSnowflakeResponseSnafu)?;
     }
 
     // Extract and store the session token
@@ -170,9 +155,11 @@ pub async fn snowflake_login(login_parameters: &LoginParameters) -> Result<Strin
         Ok(token)
     } else {
         tracing::error!("Login response missing token data");
-        Err(RestError::Internal(
-            "Login response missing token data".to_string(),
-        ))
+        InvalidResponseSnafu {
+            message: "Login response missing token".to_string(),
+        }
+        .fail()
+        .context(InvalidSnowflakeResponseSnafu)?
     }
 }
 
@@ -222,10 +209,7 @@ pub async fn snowflake_query(
         ])
         .json(&query_request)
         .build()
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to build query request");
-            RestError::Internal(format!("Failed to build query request: {e}"))
-        })?;
+        .context(RequestConstructionSnafu { request: "query" })?;
 
     tracing::debug!("Query request: {:?}", request);
     tracing::debug!("Request headers: {:?}", request.headers());
@@ -237,33 +221,103 @@ pub async fn snowflake_query(
     // tracing::debug!("Request accept: {:?}", request.accept());
     // tracing::debug!("Request accept-encoding: {:?}", request.accept_encoding());
 
-    let response = client.execute(request).await.map_err(|e| {
-        tracing::error!(error = %e, "Failed to execute query request");
-        RestError::Internal(format!("Failed to execute query request: {e}"))
+    let response = client.execute(request).await.context(CommunicationSnafu {
+        context: "Failed to execute query request",
     })?;
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Unknown error".to_string());
-        tracing::error!(status = %status, error_text = %error_text, "Query request failed");
-        return Err(RestError::Status(status));
+    let query_response = read_response_json::<query_response::Response>(response)
+        .await
+        .context(InvalidSnowflakeResponseSnafu)?;
+
+    if !query_response.success {
+        let message = query_response
+            .message
+            .unwrap_or_else(|| "Unknown error".to_string());
+        InvalidResponseSnafu { message }
+            .fail()
+            .context(InvalidSnowflakeResponseSnafu)
+    } else {
+        Ok(query_response)
+    }
+}
+
+async fn read_response_json<T>(response: reqwest::Response) -> Result<T, SnowflakeResponseError>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let response_status = response.status();
+    let response_text = response.text().await;
+
+    if !response_status.is_success() {
+        return ResponseStatusSnafu {
+            status: response_status,
+            message: response_text.unwrap_or("Unknown error".to_string()),
+        }
+        .fail();
     }
 
-    let response_text = response
-        .text()
-        .await
-        .unwrap_or_else(|_| "Unknown error".to_string());
+    let response_text = response_text.context(ResponseTextSnafu)?;
 
-    tracing::debug!("Query response text: {}", response_text);
-
-    let response_data: query_response::Response =
-        serde_json::from_str(&response_text).map_err(|e| {
-            tracing::trace!("Response text: {}", response_text);
-            RestError::InvalidSnowflakeResponse(format!("Failed to parse query response: {e}"))
-        })?;
+    let response_data: T = serde_json::from_str(&response_text).context(ResponseFormatSnafu)?;
 
     Ok(response_data)
+}
+
+#[derive(Debug, Snafu)]
+pub enum RestError {
+    #[snafu(display("Authentication failed"))]
+    Authentication {
+        source: AuthError,
+        #[snafu(implicit)]
+        location: Location,
+    },
+    #[snafu(display("Invalid Snowflake response"))]
+    InvalidSnowflakeResponse {
+        source: SnowflakeResponseError,
+        #[snafu(implicit)]
+        location: Location,
+    },
+    #[snafu(display("Failed to communicate with Snowflake"))]
+    Communication {
+        context: String,
+        source: reqwest::Error,
+        #[snafu(implicit)]
+        location: Location,
+    },
+    #[snafu(display("Failed to build request: {request}"))]
+    RequestConstruction {
+        request: String,
+        source: reqwest::Error,
+        #[snafu(implicit)]
+        location: Location,
+    },
+}
+
+#[derive(Debug, Snafu)]
+pub enum SnowflakeResponseError {
+    #[snafu(display("Failed to parse Snowflake response"))]
+    ResponseFormat {
+        source: serde_json::Error,
+        #[snafu(implicit)]
+        location: Location,
+    },
+    #[snafu(display("Failed to read Snowflake response text"))]
+    ResponseText {
+        source: reqwest::Error,
+        #[snafu(implicit)]
+        location: Location,
+    },
+    #[snafu(display("Snowflake responded with error status: {status}, message: {message}"))]
+    ResponseStatus {
+        status: reqwest::StatusCode,
+        message: String,
+        #[snafu(implicit)]
+        location: Location,
+    },
+    #[snafu(display("{message}"))]
+    InvalidResponse {
+        message: String,
+        #[snafu(implicit)]
+        location: Location,
+    },
 }

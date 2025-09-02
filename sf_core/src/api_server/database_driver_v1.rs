@@ -1,10 +1,10 @@
 use crate::api_server::query::process_query_response;
-use crate::config::ConfigError;
 use crate::config::rest_parameters::{LoginParameters, QueryParameters};
 use crate::config::settings::Setting;
-use crate::driver::{Connection, Database, Statement, StatementError};
+use crate::driver::{Connection, Database, Statement};
 use crate::handle_manager::{Handle, HandleManager};
-use crate::rest::error::RestError;
+use crate::rest::snowflake::snowflake_query;
+use snafu::Report;
 
 use crate::thrift_gen::database_driver_v1::{
     ArrowArrayPtr, ArrowSchemaPtr, ConnectionHandle, DatabaseDriverSyncHandler,
@@ -88,30 +88,6 @@ impl From<StatementHandle> for Handle {
     }
 }
 
-impl From<RestError> for thrift::Error {
-    fn from(error: RestError) -> thrift::Error {
-        thrift::Error::from(DriverException::new(
-            error.to_string(),
-            StatusCode::INVALID_STATE,
-            None,
-            None,
-            None,
-        ))
-    }
-}
-
-impl From<ConfigError> for Error {
-    fn from(error: ConfigError) -> Self {
-        Error::from(DriverException::new(
-            format!("Configuration error: {error:?}"),
-            StatusCode::INVALID_STATE,
-            None,
-            None,
-            None,
-        ))
-    }
-}
-
 pub struct DatabaseDriverV1 {
     db_handle_manager: HandleManager<Mutex<Database>>,
     conn_handle_manager: HandleManager<Mutex<Connection>>,
@@ -121,18 +97,6 @@ pub struct DatabaseDriverV1 {
 impl Default for DatabaseDriverV1 {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl From<StatementError> for Error {
-    fn from(error: StatementError) -> Self {
-        Error::from(DriverException::new(
-            format!("{error:?}"),
-            StatusCode::INVALID_STATE,
-            None,
-            None,
-            None,
-        ))
     }
 }
 
@@ -159,7 +123,7 @@ impl DatabaseDriverV1 {
     }
 
     /// Helper to create an unknown error
-    fn unknown_error(message: impl Into<String>) -> Error {
+    fn internal_error(message: impl Into<String>) -> Error {
         Self::driver_error(message, StatusCode::UNKNOWN)
     }
 
@@ -368,10 +332,11 @@ impl DatabaseDriverSyncHandler for DatabaseDriverV1 {
             Some(conn_ptr) => {
                 // Create a blocking runtime for the login process
                 let rt = tokio::runtime::Runtime::new()
-                    .map_err(|e| Self::unknown_error(format!("Failed to create runtime: {e}")))?;
+                    .map_err(|e| Self::internal_error(format!("Failed to create runtime: {e}")))?;
 
                 let login_parameters =
-                    LoginParameters::from_settings(&conn_ptr.lock().unwrap().settings)?;
+                    LoginParameters::from_settings(&conn_ptr.lock().unwrap().settings)
+                        .map_err(snafu_to_thrift)?;
 
                 let login_result = rt.block_on(async {
                     crate::rest::snowflake::snowflake_login(&login_parameters).await
@@ -382,7 +347,7 @@ impl DatabaseDriverSyncHandler for DatabaseDriverV1 {
                         conn_ptr.lock().unwrap().session_token = Some(session_token);
                         Ok(())
                     }
-                    Err(e) => Err(e.into()),
+                    Err(e) => Err(snafu_to_thrift(e)),
                 }
             }
             None => Err(Self::invalid_argument("Connection handle not found")),
@@ -564,10 +529,10 @@ impl DatabaseDriverSyncHandler for DatabaseDriverV1 {
         let schema = unsafe { FFI_ArrowSchema::from_raw(schema.into()) };
         let array = unsafe { FFI_ArrowArray::from_raw(array.into()) };
         let array = unsafe { arrow::ffi::from_ffi(array, &schema) }
-            .map_err(|e| Self::unknown_error(format!("Failed to convert ArrowArray: {e}")))?;
+            .map_err(|e| Self::internal_error(format!("Failed to convert ArrowArray: {e}")))?;
         let record_batch = RecordBatch::from(StructArray::from(array));
         self.with_statement(stmt_handle, |mut stmt| {
-            stmt.bind_parameters(record_batch).map_err(Error::from)
+            stmt.bind_parameters(record_batch).map_err(snafu_to_thrift)
         })
     }
 
@@ -595,41 +560,35 @@ impl DatabaseDriverSyncHandler for DatabaseDriverV1 {
         let query = stmt
             .query
             .take()
-            .ok_or(RestError::Internal("Query not found".to_string()))?;
+            .ok_or_else(|| Self::invalid_argument("Query not found"))?;
 
         // Run within the async runtime
         let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| Self::unknown_error(format!("Failed to create runtime: {e}")))?;
+            .map_err(|e| Self::internal_error(format!("Failed to create runtime: {e}")))?;
 
         let (query_parameters, session_token) = {
             let conn = stmt.conn.lock().unwrap();
             (
-                QueryParameters::from_settings(&conn.settings)?,
+                QueryParameters::from_settings(&conn.settings).map_err(snafu_to_thrift)?,
                 conn.session_token
                     .clone()
-                    .ok_or(RestError::Internal("Session token not found".to_string()))?,
+                    .ok_or_else(|| Self::invalid_argument("Session token not found"))?,
             )
         };
 
-        let response = rt.block_on(crate::rest::snowflake::snowflake_query(
-            query_parameters,
-            session_token,
-            query,
-            stmt.get_query_parameter_bindings().map_err(Error::from)?,
-        ))?;
-
-        if !response.success {
-            // TODO: Add proper error handling
-            return Err(Self::unknown_error(
-                response
-                    .message
-                    .unwrap_or_else(|| "Unknown error".to_string()),
-            ));
-        }
+        let response = rt
+            .block_on(snowflake_query(
+                query_parameters,
+                session_token,
+                query,
+                stmt.get_query_parameter_bindings()
+                    .map_err(snafu_to_thrift)?,
+            ))
+            .map_err(snafu_to_thrift)?;
 
         let response_reader = rt
             .block_on(process_query_response(&response.data))
-            .map_err(|e| Self::unknown_error(format!("Failed to process query response: {e}")))?;
+            .map_err(snafu_to_thrift)?;
 
         let rowset_stream = Box::new(FFI_ArrowArrayStream::new(response_reader));
 
@@ -655,4 +614,28 @@ impl DatabaseDriverSyncHandler for DatabaseDriverV1 {
     ) -> thrift::Result<i64> {
         todo!()
     }
+}
+
+// TODO: Implement a function that prints a SNAFU error with location info for easier debugging
+pub fn generate_error_report<E>(error: E) -> String
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    // Convert the given error into a snafu::Report.
+    let report = Report::from_error(error);
+    // Use `to_string()` to get the human-readable report string.
+    report.to_string()
+}
+
+pub fn snafu_to_thrift<E>(error: E) -> Error
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    Error::from(DriverException::new(
+        generate_error_report(error),
+        StatusCode::UNKNOWN,
+        None,
+        None,
+        None,
+    ))
 }

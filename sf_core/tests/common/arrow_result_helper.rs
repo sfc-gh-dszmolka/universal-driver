@@ -100,9 +100,8 @@ impl ArrowResultHelper {
         if let Some(batch) = self.next_batch()
             && batch.num_rows() == 1
         {
-            T::deserialize_one(&batch, 0)
-        } else {
-            Err("Expected exactly one row in the batch".to_string())
+            return T::deserialize_one(&batch, 0);
         }
+        Err("Expected exactly one row in the batch".to_string())
     }
 }

@@ -2,17 +2,9 @@ use jwt::PKeyWithDigest;
 use jwt::SignWithKey;
 use openssl::hash::MessageDigest;
 use serde::Serialize;
+use snafu::{Location, ResultExt, Snafu};
 
 use crate::config::rest_parameters::{LoginMethod, LoginParameters};
-
-#[derive(Debug)]
-pub enum AuthError {
-    InvalidPrivateKeyFormat(String),
-    CouldNotCreatePrivateKey(String),
-    CouldNotExtractPublicKey(String),
-    CouldNotGetCurrentTime(String),
-    CouldNotSignJWT(String),
-}
 
 pub enum Credentials {
     Password { username: String, password: String },
@@ -45,15 +37,13 @@ fn generate_jwt_token(
     } else {
         Rsa::private_key_from_pem(private_key.as_bytes())
     }
-    .map_err(|e| AuthError::InvalidPrivateKeyFormat(format!("Invalid private key format: {e}")))?;
-    let private_key = PKey::from_rsa(rsa).map_err(|e| {
-        AuthError::CouldNotCreatePrivateKey(format!("Could not create private key: {e}"))
-    })?;
+    .context(InvalidPrivateKeyFormatSnafu)?;
+    let private_key = PKey::from_rsa(rsa).context(PrivateKeyCreationSnafu)?;
 
     // Extract public key and hash it
-    let public_key_der = private_key.public_key_to_der().map_err(|e| {
-        AuthError::CouldNotExtractPublicKey(format!("Could not extract public key: {e}"))
-    })?;
+    let public_key_der = private_key
+        .public_key_to_der()
+        .context(PublicKeyExtractionSnafu)?;
     let mut hasher = openssl::sha::Sha256::new();
     hasher.update(&public_key_der);
     let public_key_hash = hasher.finish();
@@ -73,7 +63,7 @@ fn generate_jwt_token(
     // Create claims
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|_| AuthError::CouldNotGetCurrentTime("Could not get current time".to_string()))?
+        .context(SystemTimeSnafu)?
         .as_secs() as i64;
 
     let sub = format!("{}.{}", account.to_uppercase(), username.to_uppercase());
@@ -88,7 +78,7 @@ fn generate_jwt_token(
     // Create and sign token
     let token = Token::new(header, claim)
         .sign_with_key(&pkey_with_digest)
-        .map_err(|e| AuthError::CouldNotSignJWT(format!("Could not sign JWT: {e}")))?;
+        .context(JWTSigningSnafu)?;
 
     Ok(token.as_str().to_string())
 }
@@ -120,4 +110,38 @@ pub fn create_credentials(login_parameters: &LoginParameters) -> Result<Credenti
             token: token.clone(),
         }),
     }
+}
+
+#[derive(Debug, Snafu)]
+pub enum AuthError {
+    #[snafu(display("Invalid private key format"))]
+    InvalidPrivateKeyFormat {
+        source: openssl::error::ErrorStack,
+        #[snafu(implicit)]
+        location: Location,
+    },
+    #[snafu(display("Failed to create private key from RSA"))]
+    PrivateKeyCreation {
+        source: openssl::error::ErrorStack,
+        #[snafu(implicit)]
+        location: Location,
+    },
+    #[snafu(display("Failed to extract public key from private key"))]
+    PublicKeyExtraction {
+        source: openssl::error::ErrorStack,
+        #[snafu(implicit)]
+        location: Location,
+    },
+    #[snafu(display("Failed to get current system time"))]
+    SystemTime {
+        source: std::time::SystemTimeError,
+        #[snafu(implicit)]
+        location: Location,
+    },
+    #[snafu(display("Failed to sign JWT token"))]
+    JWTSigning {
+        source: jwt::Error,
+        #[snafu(implicit)]
+        location: Location,
+    },
 }
