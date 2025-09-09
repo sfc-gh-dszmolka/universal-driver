@@ -8,8 +8,11 @@
 #include <sstream>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_all.hpp>
 
 #include "HandleWrapper.hpp"
+#include "compatibility.hpp"
+#include "get_diag_rec.hpp"
 #include "macros.hpp"
 #include "test_setup.hpp"
 
@@ -80,11 +83,26 @@ class PrivateKeyAuthTest {
     REQUIRE(result == 1);
   }
 
-  void verify_connection_fails(ConnectionHandleWrapper& dbc, const std::string& connection_string) {
+  void verify_connection_fails_with_missing_private_key_error(
+      ConnectionHandleWrapper& dbc, const std::string& connection_string) {
     SQLRETURN ret = SQLDriverConnect(dbc.getHandle(), NULL, (SQLCHAR*)connection_string.c_str(),
                                      SQL_NTS, NULL, 0, NULL, SQL_DRIVER_NOPROMPT);
-    REQUIRE(ret != SQL_SUCCESS);
-    REQUIRE(ret != SQL_SUCCESS_WITH_INFO);
+    REQUIRE(ret == SQL_ERROR);
+
+    auto records = get_diag_rec(dbc);
+    REQUIRE(records.size() == 1);  // Expecting one error record
+    CHECK(records[0].sqlState == "28000");
+    using Catch::Matchers::ContainsSubstring;
+    OLD_DRIVER_ONLY("BC#1: Native error code should be 0 when error originates from client side.") {
+      CHECK(records[0].nativeError == 20032);
+      CHECK_THAT(records[0].messageText, ContainsSubstring("Required setting 'PRIV_KEY_FILE'"));
+    }
+
+    NEW_DRIVER_ONLY("BC#1: Native error code should be 0 when error originates from client side.") {
+      CHECK(records[0].nativeError == 0);
+      CHECK_THAT(records[0].messageText,
+                 ContainsSubstring("Missing required parameter: private_key_file"));
+    }
   }
 };
 
@@ -118,5 +136,5 @@ TEST_CASE("should fail JWT authentication when no private file provided", "[priv
   std::string connection_string = test.get_jwt_connection_string_without_private_key();
 
   // Then There is error returned
-  test.verify_connection_fails(dbc, connection_string);
+  test.verify_connection_fails_with_missing_private_key_error(dbc, connection_string);
 }
