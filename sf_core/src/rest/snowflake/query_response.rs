@@ -1,3 +1,4 @@
+use crate::api_server::query_types;
 use crate::chunks::ChunkDownloadData;
 use crate::file_manager;
 use crate::file_manager::SourceCompressionParam;
@@ -166,21 +167,21 @@ pub struct RowType {
     #[serde(rename = "name")]
     pub name: String,
     #[serde(rename = "scale")]
-    pub scale: Option<i64>,
+    pub scale: Option<u64>,
     #[serde(rename = "nullable")]
     pub nullable: bool,
     #[serde(rename = "type")]
     pub type_: String,
+    #[serde(rename = "byteLength")]
+    pub byte_length: Option<u64>,
+    #[serde(rename = "length")]
+    pub length: Option<u64>,
+    #[serde(rename = "precision")]
+    pub precision: Option<u64>,
 
     // unused fields
     #[serde(rename = "fields")]
-    _fields: Option<Vec<FieldMetadata>>,
-    #[serde(rename = "byteLength")]
-    _byte_length: Option<i64>,
-    #[serde(rename = "length")]
-    _length: Option<i64>,
-    #[serde(rename = "precision")]
-    _precision: Option<i64>,
+    pub _fields: Option<Vec<FieldMetadata>>,
 }
 
 #[derive(Deserialize)]
@@ -419,6 +420,65 @@ impl Data {
             .collect();
 
         Some(chunk_download_data)
+    }
+}
+
+impl TryFrom<&RowType> for query_types::RowType {
+    type Error = QueryResponseError;
+
+    fn try_from(value: &RowType) -> Result<Self, Self::Error> {
+        let name = value.name.clone();
+        let nullable = value.nullable;
+
+        match value.type_.to_uppercase().as_str() {
+            "TEXT" => {
+                let length = value.length.context(MissingParameterSnafu {
+                    parameter: format!(
+                        "row type -> length for TEXT/STRING/VARCHAR/CHAR column '{name}'"
+                    ),
+                })?;
+
+                let byte_length = value.byte_length.context(MissingParameterSnafu {
+                    parameter: format!(
+                        "row type -> byte length for TEXT/STRING/VARCHAR/CHAR column '{name}'"
+                    ),
+                })?;
+
+                Ok(query_types::RowType::text(
+                    &name,
+                    nullable,
+                    length,
+                    byte_length,
+                ))
+            }
+            "FIXED" => {
+                let precision = value.precision.context(MissingParameterSnafu {
+                    parameter: format!(
+                        "row type -> precision for FIXED/NUMBER/NUMERIC/DECIMAL column '{name}'"
+                    ),
+                })?;
+
+                let scale = value.scale.context(MissingParameterSnafu {
+                    parameter: format!(
+                        "row type -> scale for FIXED/NUMBER/NUMERIC/DECIMAL column '{name}'"
+                    ),
+                })?;
+
+                let row_type = query_types::RowType::fixed(&name, nullable, precision, scale)
+                    .map_err(|e| {
+                        InvalidFormatSnafu {
+                            message: format!("Invalid type for column '{name}': {e}"),
+                        }
+                        .build()
+                    })?;
+
+                Ok(row_type)
+            }
+            other => InvalidFormatSnafu {
+                message: format!("Unsupported column type '{other}' for column '{name}'"),
+            }
+            .fail(),
+        }
     }
 }
 
