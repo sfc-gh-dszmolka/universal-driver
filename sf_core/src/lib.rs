@@ -2,8 +2,9 @@ extern crate thrift;
 extern crate tracing;
 extern crate tracing_subscriber;
 
-pub mod api_client;
-pub mod api_server;
+pub mod apis;
+
+pub mod arrow_utils;
 mod auth;
 pub mod c_api;
 mod chunks;
@@ -14,7 +15,8 @@ pub mod driver;
 mod file_manager;
 pub mod handle_manager;
 pub mod logging;
+pub mod query_types;
 pub mod rest;
 mod test_utils;
+pub mod thrift_apis;
 pub mod thrift_gen;
-mod transport;
