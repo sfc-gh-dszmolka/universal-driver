@@ -19,3 +19,4 @@ pub mod rest;
 mod test_utils;
 pub mod thrift_apis;
 pub mod thrift_gen;
+pub mod tls;

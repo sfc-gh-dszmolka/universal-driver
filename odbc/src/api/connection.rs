@@ -139,6 +139,33 @@ pub fn driver_connect(
                     .connection_set_option_string(conn_handle.clone(), "token".to_owned(), value)
                     .map_err(OdbcError::from_thrift_error)?;
             }
+            "TLS_CUSTOM_ROOT_STORE_PATH" => {
+                client
+                    .connection_set_option_string(
+                        conn_handle.clone(),
+                        "custom_root_store_path".to_owned(),
+                        value,
+                    )
+                    .map_err(OdbcError::from_thrift_error)?;
+            }
+            "TLS_VERIFY_HOSTNAME" => {
+                client
+                    .connection_set_option_string(
+                        conn_handle.clone(),
+                        "verify_hostname".to_owned(),
+                        value,
+                    )
+                    .map_err(OdbcError::from_thrift_error)?;
+            }
+            "TLS_VERIFY_CERTIFICATES" => {
+                client
+                    .connection_set_option_string(
+                        conn_handle.clone(),
+                        "verify_certificates".to_owned(),
+                        value,
+                    )
+                    .map_err(OdbcError::from_thrift_error)?;
+            }
             _ => {
                 tracing::warn!("driver_connect: unknown connection string key: {:?}", key);
             }
