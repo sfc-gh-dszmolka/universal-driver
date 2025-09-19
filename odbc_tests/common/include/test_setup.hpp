@@ -10,7 +10,25 @@
 #include <catch2/catch_test_macros.hpp>
 
 inline std::string get_driver_path() {
-  // DRIVER_PATH from environment variable
+  // Prefer a driver name if provided/installed via ODBCINSTINI, otherwise fall back to path
+  const char* driver_name_env_value = std::getenv("DRIVER_NAME");
+  if (driver_name_env_value != nullptr && driver_name_env_value[0] != '\0') {
+    std::string driver_name = std::string(driver_name_env_value);
+    INFO("Driver name: " << driver_name);
+    // If ODBCINSTINI is not set, warn the user; still return braced name
+    const char* odbcinstini_env_value = std::getenv("ODBCINSTINI");
+    if (odbcinstini_env_value == nullptr || odbcinstini_env_value[0] == '\0') {
+      WARN(std::string(
+               "You are using DRIVER_NAME variable to set the driver implementation, while "
+               "ODBCINSTINI is not set.\nPlease make sure ODBCINSTINI points to configuration "
+               "file for ODBC drivers.")
+               .c_str());
+    }
+    // Return braced name so the Driver Manager resolves installed driver entry
+    return "{" + driver_name + "}";
+  }
+
+  // Fallback: DRIVER_PATH from environment variable
   const char* driver_path_env_value = std::getenv("DRIVER_PATH");
   REQUIRE(driver_path_env_value != nullptr);
   std::string driver_path = std::string(driver_path_env_value);
