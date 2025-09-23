@@ -6,7 +6,7 @@ import pytest
 from pathlib import Path
 
 from .connector_factory import ConnectorFactory, create_connection_with_adapter
-from .utils import set_current_connector
+from .compatibility import set_current_connector
 from .connector_types import ConnectorType
 
 
@@ -78,6 +78,33 @@ def cursor(connection):
     """Create a test cursor from a connection."""
     with connection.cursor() as cursor:
         yield cursor
+
+
+@pytest.fixture
+def int_test_connection_factory(connector_adapter):
+    """Factory function for creating connections with integration test parameters."""
+    def _create_connection(**override_params):
+        """Create a connection with integration test parameters."""
+        # Default integration test parameters
+        integration_params = {
+            "account": "test_account",
+            "user": "test_user", 
+            "password": "test_password",
+            "database": "test_database",
+            "schema": "test_schema",
+            "warehouse": "test_warehouse",
+            "role": "test_role",
+            "host": "localhost",
+            "port": 8090,
+            "protocol": "http",
+            "server_url": "http://localhost:8090",
+        }
+        
+        integration_params.update(override_params)
+        
+        return create_connection_with_adapter(connector_adapter, **integration_params)
+    
+    return _create_connection
 
 
 def pytest_runtest_setup(item):

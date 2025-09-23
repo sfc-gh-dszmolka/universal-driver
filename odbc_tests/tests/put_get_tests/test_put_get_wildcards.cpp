@@ -9,11 +9,12 @@
 #include "Connection.hpp"
 #include "get_data.hpp"
 #include "put_get_utils.hpp"
+#include "utils.hpp"
 
 namespace fs = std::filesystem;
 using namespace pg_utils;
 
-static fs::path wildcard_tests_dir() { return shared_test_data_dir() / "wildcard"; }
+static fs::path wildcard_tests_dir() { return test_utils::shared_test_data_dir() / "wildcard"; }
 
 TEST_CASE("PUT with ? wildcard and LS", "[put_get][odbc]") {
   Connection conn;

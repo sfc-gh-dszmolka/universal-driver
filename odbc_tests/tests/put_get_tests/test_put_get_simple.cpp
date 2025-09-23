@@ -10,6 +10,7 @@
 #include "Connection.hpp"
 #include "get_data.hpp"
 #include "put_get_utils.hpp"
+#include "utils.hpp"
 
 using namespace pg_utils;
 namespace fs = std::filesystem;
@@ -22,7 +23,7 @@ static std::string to_lower_copy(const std::string& s) {
 }
 
 static std::pair<std::string, fs::path> basic_test_file() {
-  return {"test_data.csv", shared_test_data_dir() / "basic" / "test_data.csv"};
+  return {"test_data.csv", test_utils::shared_test_data_dir() / "basic" / "test_data.csv"};
 }
 
 TEST_CASE("PUT then SELECT from stage", "[put_get][odbc]") {
