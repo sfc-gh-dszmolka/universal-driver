@@ -166,6 +166,25 @@ pub fn driver_connect(
                     )
                     .map_err(OdbcError::from_thrift_error)?;
             }
+            // CRL settings via options
+            "CRL_ENABLED" => {
+                client
+                    .connection_set_option_string(
+                        conn_handle.clone(),
+                        "crl_enabled".to_owned(),
+                        value,
+                    )
+                    .map_err(OdbcError::from_thrift_error)?;
+            }
+            "CRL_MODE" => {
+                client
+                    .connection_set_option_string(
+                        conn_handle.clone(),
+                        "crl_mode".to_owned(),
+                        value.to_uppercase(),
+                    )
+                    .map_err(OdbcError::from_thrift_error)?;
+            }
             _ => {
                 tracing::warn!("driver_connect: unknown connection string key: {:?}", key);
             }
