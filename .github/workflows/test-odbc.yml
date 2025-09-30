@@ -103,14 +103,14 @@ jobs:
               -instr-profile=coverage.profdata \
               -format=lcov \
               -sources=$(pwd)/odbc \
-              -sources=$(pwd)/sf_core > lcov.info
+              -sources=$(pwd)/sf_core > lcov-${{ matrix.os }}-odbc-stable.info
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
-          files: ./lcov.info
+          files: ./lcov-${{ matrix.os }}-odbc-stable.info
           flags: odbc
           name: odbc-${{ runner.os }}
           fail_ci_if_error: false
