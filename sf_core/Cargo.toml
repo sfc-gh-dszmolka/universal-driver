@@ -20,6 +20,8 @@ reqwest = { version = "0.12.23", features = ["json", "rustls-tls"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
 tokio = { version = "1.47.1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["time"] }
+tokio-stream = "0.1"
 uuid = { version = "1.18", features = ["v4"] }
 base64 = "0.22.1"
 arrow = { version = "56.0.0", features = ["ffi"] }
@@ -66,6 +68,7 @@ clap = { version = "4.5", features = ["derive"] }
 signature = "2"
 der = "0.7"
 pkcs1 = "0.7"
+num-traits = "0.2.19"
 
 [dev-dependencies]
 tempfile = "3.21.0"

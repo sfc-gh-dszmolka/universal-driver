@@ -8,6 +8,7 @@ use crate::config::rest_parameters::{LoginParameters, QueryParameters};
 use crate::rest::snowflake::auth::{
     AuthRequest, AuthRequestClientEnvironment, AuthRequestData, AuthResponse,
 };
+use crate::tls::error::TlsError;
 use reqwest;
 use serde_json;
 use snafu::{Location, ResultExt, Snafu};
@@ -61,7 +62,13 @@ pub fn auth_request_data(login_parameters: &LoginParameters) -> Result<AuthReque
     Ok(data)
 }
 
-#[tracing::instrument(skip(login_parameters, client), fields(account_name, login_name))]
+#[tracing::instrument(skip(login_parameters), fields(account_name, login_name))]
+pub async fn snowflake_login(login_parameters: &LoginParameters) -> Result<String, RestError> {
+    let client = reqwest::Client::new();
+    snowflake_login_with_client(&client, login_parameters).await
+}
+
+#[tracing::instrument(skip(client, login_parameters), fields(account_name, login_name))]
 pub async fn snowflake_login_with_client(
     client: &reqwest::Client,
     login_parameters: &LoginParameters,
@@ -93,10 +100,7 @@ pub async fn snowflake_login_with_client(
         serde_json::to_string_pretty(&login_request).unwrap()
     );
 
-    // Use provided HTTP client
-    tracing::debug!("Preparing login request with provided HTTP client");
     let login_url = format!("{}/session/v1/login-request", login_parameters.server_url);
-
     tracing::info!(login_url = %login_url, "Making Snowflake login request");
     let request = client
         .post(&login_url)
@@ -132,6 +136,7 @@ pub async fn snowflake_login_with_client(
         .header("Authorization", "Snowflake Token=\"None\"")
         .build()
         .context(RequestConstructionSnafu { request: "login" })?;
+
     let response = client.execute(request).await.context(CommunicationSnafu {
         context: "Failed to execute login request",
     })?;
@@ -147,12 +152,12 @@ pub async fn snowflake_login_with_client(
         tracing::error!(message = %message, "Snowflake login failed");
         let code = auth_response
             ._code
-            .map(|c| c.parse::<i32>().unwrap_or(-1))
+            .as_deref()
+            .and_then(|c| c.parse::<i32>().ok())
             .unwrap_or(-1);
         LoginSnafu { message, code }.fail()?;
     }
 
-    // Extract and store the session token
     tracing::debug!("Login successful, extracting session token");
     if let Some(token) = auth_response.data.token {
         tracing::info!("Snowflake login completed successfully");
@@ -167,10 +172,22 @@ pub async fn snowflake_login_with_client(
     }
 }
 
-#[tracing::instrument(skip(login_parameters), fields(account_name, login_name))]
-pub async fn snowflake_login(login_parameters: &LoginParameters) -> Result<String, RestError> {
+#[tracing::instrument(skip(query_parameters, session_token, parameter_bindings), fields(sql))]
+pub async fn snowflake_query(
+    query_parameters: QueryParameters,
+    session_token: String,
+    sql: String,
+    parameter_bindings: Option<HashMap<String, query_request::BindParameter>>,
+) -> Result<query_response::Response, RestError> {
     let client = reqwest::Client::new();
-    snowflake_login_with_client(&client, login_parameters).await
+    snowflake_query_with_client(
+        &client,
+        query_parameters,
+        session_token,
+        sql,
+        parameter_bindings,
+    )
+    .await
 }
 
 #[tracing::instrument(
@@ -185,7 +202,6 @@ pub async fn snowflake_query_with_client(
     parameter_bindings: Option<HashMap<String, query_request::BindParameter>>,
 ) -> Result<query_response::Response, RestError> {
     let server_url = query_parameters.server_url;
-
     let query_url = format!("{server_url}/queries/v1/query-request");
 
     let query_request = query_request::Request {
@@ -206,14 +222,12 @@ pub async fn snowflake_query_with_client(
 
     let json_payload = serde_json::to_string_pretty(&query_request).unwrap();
     tracing::debug!("JSON Body Sent:\n{}", json_payload);
-
     let request = client
         .post(&query_url)
         .header(
             "Authorization",
             &format!("Snowflake Token=\"{session_token}\""),
         )
-        // we might want to add some logic to handle different content types later
         .header("Accept", "application/json")
         .header("User-Agent", user_agent(&query_parameters.client_info))
         .query(&[
@@ -254,24 +268,6 @@ pub async fn snowflake_query_with_client(
     }
 }
 
-#[tracing::instrument(skip(query_parameters, session_token, parameter_bindings), fields(sql))]
-pub async fn snowflake_query(
-    query_parameters: QueryParameters,
-    session_token: String,
-    sql: String,
-    parameter_bindings: Option<HashMap<String, query_request::BindParameter>>,
-) -> Result<query_response::Response, RestError> {
-    let client = reqwest::Client::new();
-    snowflake_query_with_client(
-        &client,
-        query_parameters,
-        session_token,
-        sql,
-        parameter_bindings,
-    )
-    .await
-}
-
 async fn read_response_json<T>(response: reqwest::Response) -> Result<T, SnowflakeResponseError>
 where
     T: serde::de::DeserializeOwned,
@@ -289,7 +285,7 @@ where
 
     let response_text = response_text.context(ResponseTextSnafu)?;
 
-    tracing::debug!("Response text: {}", response_text);
+    tracing::debug!("Response text: {response_text}");
     let response_data: T = serde_json::from_str(&response_text).context(ResponseFormatSnafu)?;
 
     Ok(response_data)
@@ -323,7 +319,12 @@ pub enum RestError {
         #[snafu(implicit)]
         location: Location,
     },
-
+    #[snafu(display("TLS client creation failed"))]
+    CrlValidation {
+        source: Box<TlsError>,
+        #[snafu(implicit)]
+        location: Location,
+    },
     #[snafu(display("Login error: {message}, code: {code}"))]
     LoginError {
         message: String,
@@ -332,7 +333,6 @@ pub enum RestError {
         location: Location,
     },
 }
-
 #[derive(Debug, Snafu)]
 pub enum SnowflakeResponseError {
     #[snafu(display("Failed to parse Snowflake response"))]

@@ -3760,6 +3760,7 @@ dependencies = [
  "jwt",
  "lazy_static",
  "lru",
+ "num-traits",
  "once_cell",
  "openssl",
  "opentelemetry",
@@ -3786,6 +3787,8 @@ dependencies = [
  "thrift",
  "time",
  "tokio",
+ "tokio-stream",
+ "tokio-util",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
@@ -4327,6 +4330,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "pin-project-lite",
+ "slab",
  "tokio",
 ]
 

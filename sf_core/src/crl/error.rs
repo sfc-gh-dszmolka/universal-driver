@@ -21,6 +21,17 @@ pub enum CrlError {
         #[snafu(implicit)]
         location: Location,
     },
+    #[snafu(display("CRL violates policy/profile requirements"))]
+    CrlPolicyViolation {
+        #[snafu(implicit)]
+        location: Location,
+    },
+    #[snafu(display("Unsupported CRL signature algorithm: {oid}"))]
+    UnsupportedSignatureAlgorithm {
+        oid: String,
+        #[snafu(implicit)]
+        location: Location,
+    },
     #[snafu(display("CRL issuer does not match certificate issuer"))]
     CrlIssuerMismatch {
         #[snafu(implicit)]
@@ -49,8 +60,13 @@ pub enum CrlError {
         #[snafu(implicit)]
         location: Location,
     },
-    #[snafu(display("All certificate chains are revoked"))]
-    AllChainsRevoked {
+    #[snafu(display("Certificate chain is revoked or indeterminate"))]
+    ChainRevoked {
+        #[snafu(implicit)]
+        location: Location,
+    },
+    #[snafu(display("End-entity certificate is revoked"))]
+    EndEntityRevoked {
         #[snafu(implicit)]
         location: Location,
     },
