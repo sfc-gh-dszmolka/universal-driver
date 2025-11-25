@@ -5,7 +5,9 @@ This module defines the Cursor class as specified in PEP 249.
 """
 from .exceptions import NotSupportedError
 import pyarrow
-from .protobuf_gen.database_driver_v1_pb2 import *
+
+from ._internal.protobuf_gen.database_driver_v1_pb2 import StatementNewRequest, StatementSetSqlQueryRequest, StatementExecuteQueryRequest
+
 
 class Cursor:
     """
