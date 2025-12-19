@@ -4,7 +4,7 @@
 
 # Disclaimer regarding the project's support
 
-This project is experimental and you’’re free to experiment with it at your own risk, but please be aware that at this early stage we do not provide any level of support for it, that especially means cases raised for Snowflake Support.
+This project is experimental and you're free to experiment with it at your own risk, but please be aware that at this early stage we do not provide any level of support for it, that especially means cases raised for Snowflake Support.
 Please watch this space for updates and thank you for your interest in this product.
 
 # Running Tests
